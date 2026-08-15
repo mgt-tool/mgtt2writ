@@ -28,10 +28,6 @@
 
 (package
  (name mgtt2writ)
- ; Nothing is attached to the package yet — the executable arrives with
- ; bin/dune — and dune refuses to build an install file for an empty package
- ; without being told it is deliberate. Removed once bin/ exists.
- (allow_empty)
  (synopsis
   "Translate an mgtt architecture model into a writ model, for checking by exhaustion")
  (description

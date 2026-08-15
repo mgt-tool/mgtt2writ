@@ -1,0 +1,19 @@
+; The executable. `(public_name mgtt2writ)` is what puts the binary on PATH as
+; `mgtt2writ` under `opam install .`.
+;
+; Version is generated from dune-project rather than written down, because a
+; hand-kept copy of a version number is a copy that is eventually wrong.
+
+(executable
+ (name main)
+ (public_name mgtt2writ)
+ (package mgtt2writ)
+ (modules main version)
+ (libraries mgtt2writ writ_json))
+
+(rule
+ (targets version.ml)
+ (action
+  (with-stdout-to
+   version.ml
+   (echo "let v = \"%{version:mgtt2writ}\"\n"))))
