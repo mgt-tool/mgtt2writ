@@ -638,7 +638,6 @@ let test_pinned_export_contract () =
   let _, declines = Emit_mgtt.file ~name:"pinned" d in
   check "contract: the pinned export declines nothing" (declines = [])
 
-
 (* The emitted model is the deliverable, and it is the one artifact a user
    opens. It must not name a verb of the tool that reads it: `writ mgtt` was
    deleted, and this tool exists precisely so that neither project names the
