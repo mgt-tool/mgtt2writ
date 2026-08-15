@@ -1,0 +1,78 @@
+#!/bin/sh
+# Copyright (C) 2026 Alex Kunich
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# The whole pipeline, in one command:
+#
+#   mgtt model export --json | mgtt2writ | writ check --stdin
+#
+# The name says "check" and means it — this script runs the check. The binary
+# it calls in the middle is `mgtt2writ`, which only translates; naming that one
+# "-check" would have put the pipeline's purpose on the one component that does
+# not serve it.
+#
+# It exists because three commands and a pipe is more friction than a model
+# author should carry on every run, and a model only stays honest if the loop
+# is cheap. Everything it does is visible in the line above: nothing here is
+# unavailable to someone who would rather type the pipeline.
+#
+# Exit status is writ's, unchanged: 0 clean, 1 a finding, 2 unreadable input.
+# That is what lets this sit in CI beside `mgtt simulate --all` with no wrapper
+# logic of its own.
+
+set -eu
+
+usage() {
+  cat <<'EOF'
+usage: mgtt-contradict-check [MODEL.yaml] [-- WRIT-ARGS...]
+
+Translate an mgtt model into a writ model and check it by exhaustion.
+
+  MODEL.yaml      the model to check (default: mgtt's own auto-detection)
+  -- ARGS...      passed through to `writ check`, e.g. -- --claims s.claims
+
+Needs on PATH: mgtt, mgtt2writ, writ.
+Override any of them with $MGTT, $MGTT2WRIT, $WRIT.
+
+Exit: 0 clean, 1 a finding, 2 unreadable input, 127 a tool is missing.
+EOF
+}
+
+mgtt=${MGTT:-mgtt}
+m2w=${MGTT2WRIT:-mgtt2writ}
+writ=${WRIT:-writ}
+
+model=""
+passthrough=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --) shift; passthrough="$*"; break ;;
+    *) model="$1"; shift ;;
+  esac
+done
+
+for tool in "$mgtt" "$m2w" "$writ"; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "mgtt-contradict-check: $tool not found on PATH" >&2
+    exit 127
+  }
+done
+
+# set -o pipefail is not POSIX, so the pipeline's exit status would be the LAST
+# command's — which is what we want from writ, but would hide a failed export or
+# a failed translation behind writ's own "no model" error. Run the first two
+# stages into a temp file so each can be checked where it happens.
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+if [ -n "$model" ]; then
+  "$mgtt" model export --json "$model" > "$tmp/model.json"
+else
+  "$mgtt" model export --json > "$tmp/model.json"
+fi
+
+"$m2w" < "$tmp/model.json" > "$tmp/model.writ"
+
+# shellcheck disable=SC2086
+exec "$writ" check --stdin $passthrough < "$tmp/model.writ"
