@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`mgtt2writ --rules`** — generates diagnosability questions for the model it
+  would otherwise emit. Answers *which failures cannot be told apart*: a
+  situation reachable both by a component failing on its own and by a dependency
+  pushing it over is one where every fact reads the same either way, so
+  `mgtt diagnose` must guess. Ask it with
+  `writ derive MODEL.writ MODEL.rules unattributable`, or per component with
+  `unattributable-<component>`.
+
+  A component nothing depends on gets no relation at all — its failures are
+  always its own — and a model with no propagation says **NOTHING TO ASK**
+  rather than answering empty, because an empty answer and a model whose types
+  forgot `triggered_by` look identical otherwise.
+
+  The rules name concrete moves, so both they and the model are spelled by one
+  pair of functions in `Mgtt_guard`. Rules naming a move the model lacks would
+  match nothing, derive nothing, and report a false all-clear; a test asserts
+  every named move exists in the emitted model, and it was verified to fail
+  when a name is hand-written instead of shared.
+
 ## [0.1.0]
 
 First release. The translation was extracted from

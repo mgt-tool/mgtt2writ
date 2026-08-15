@@ -76,10 +76,12 @@ let report_declines (ds : Mgtt_ast.decline list) =
 
 let usage =
   "usage:\n\
-  \  mgtt model export --json | mgtt2writ [--strict] | writ check --stdin\n\n\
+  \  mgtt model export --json | mgtt2writ [--strict] | writ check --stdin\n\
+  \  mgtt model export --json | mgtt2writ --rules > model.rules\n\n\
    Reads an mgtt model export (JSON, on stdin) and writes a writ model on\n\
    stdout. Declines go to stderr.\n\n\
    options:\n\
+  \  --rules       write the diagnosability rules instead of the model\n\
   \  --strict      a decline costs exit 1 (the shape a CI check wants)\n\
   \  --version     print the version and exit\n\
   \  --help        print this and exit\n\n\
@@ -93,16 +95,29 @@ let version () =
   print_endline "Copyright (C) 2026 Alex Kunich.  License AGPL-3.0-or-later.";
   exit 0
 
-let run ~(strict : bool) =
+(* The document, read once. Both modes need it and neither needs anything
+   else, so reading is separated from what is done with it. *)
+let read_doc () : Mgtt_ast.doc =
   let src = read_stdin () in
   let j =
     match Json_parse.parse src with
     | Ok j -> j
     | Error e -> die 2 ("stdin: " ^ e)
   in
-  let doc =
-    match Mgtt_read.of_json j with Ok d -> d | Error e -> die 2 ("stdin: " ^ e)
-  in
+  match Mgtt_read.of_json j with Ok d -> d | Error e -> die 2 ("stdin: " ^ e)
+
+(* The diagnosability rules for the model the other mode emits. Same export in,
+   so the move names agree by construction — they come from the same functions
+   in [Mgtt_guard]. Nothing is declined here: a rules file asks questions, and
+   a question the model cannot answer simply returns no rows. *)
+let run_rules () =
+  let doc = read_doc () in
+  print_string (Emit_rules.file ~name:doc.Mgtt_ast.name doc);
+  flush stdout;
+  exit 0
+
+let run ~(strict : bool) =
+  let doc = read_doc () in
   (* The model's name comes from the export, not from a filename: it is the
      name mgtt itself gave the model, and a filter has no filename to fall
      back on. *)
@@ -116,6 +131,7 @@ let () =
   match Array.to_list Sys.argv with
   | [ _ ] -> run ~strict:false
   | [ _; "--strict" ] -> run ~strict:true
+  | [ _; "--rules" ] -> run_rules ()
   | [ _; ("-h" | "--help") ] ->
       print_endline usage;
       exit 0

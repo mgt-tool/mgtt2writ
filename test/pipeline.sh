@@ -40,6 +40,10 @@ if ! command -v "$m2w" >/dev/null 2>&1 && [ ! -x "$m2w" ]; then
   exit 77
 fi
 
+tmp_rules=$(mktemp)
+tmp_model=$(mktemp)
+trap 'rm -f "$tmp_rules" "$tmp_model"' EXIT
+
 fail() {
   echo "pipeline: FAIL — $1"
   exit 1
@@ -70,4 +74,21 @@ states=$(echo "$out" | sed -n 's/^states: *\([0-9]*\).*/\1/p')
 declines=$("$m2w" < "$fixture" 2>&1 >/dev/null) || true
 [ -z "$declines" ] || fail "the pinned export should decline nothing; got: $declines"
 
-echo "pipeline: 3 checks passed (real $writ, $states situations)"
+# ---- the diagnosability rules run against the same model --------------------
+#
+# `writ derive` answering at all is the check: rules naming a move the model
+# does not have would derive nothing and read as an all-clear, so an empty
+# answer here is indistinguishable from a broken rules file. The unit suite
+# asserts the names line up; this asserts the pair actually runs together.
+
+"$m2w" --rules < "$fixture" > "$tmp_rules" 2>/dev/null ||
+  fail "could not generate the diagnosability rules"
+
+grep -q "(relation unattributable 1)" "$tmp_rules" ||
+  fail "the generated rules declare no unattributable relation"
+
+"$m2w" < "$fixture" > "$tmp_model" 2>/dev/null
+"$writ" derive "$tmp_model" "$tmp_rules" unattributable >/dev/null 2>&1 ||
+  fail "real writ could not answer the generated rules"
+
+echo "pipeline: 4 checks passed (real $writ, $states situations)"

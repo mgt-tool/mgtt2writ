@@ -203,3 +203,25 @@ let witness_preferring (doms : Mgtt_domains.domain list) (first : Mgtt_expr.t)
       match witness doms (Mgtt_expr.And (first, extra)) with
       | Some a -> Some a
       | None -> witness doms first)
+
+(* ---- move names ----------------------------------------------------------- *)
+
+(* The names of the two kinds of move, in one place.
+
+   They are here rather than inline in the emitter because a SECOND consumer
+   now needs them: the diagnosability rules ([Emit_rules]) name moves in order
+   to ask which of them could have caused a situation. If the two spellings
+   ever drift, the rules match no edge, derive nothing, and report a clean
+   answer — a false all-clear, which is the worst failure this tool has. One
+   function each is what makes that drift impossible rather than unlikely. *)
+
+(* A component failing on its own: the root cause of a chain. *)
+let origination_move ~(component : string) ~(state : string) : string =
+  writ_name component ^ "-fails-" ^ writ_name state
+
+(* A failure crossing a dependency edge: [dep] in [dep_state] puts [component]
+   into [state]. *)
+let propagation_move ~(dep : string) ~(dep_state : string) ~(component : string)
+    ~(state : string) : string =
+  writ_name dep ^ "-" ^ writ_name dep_state ^ "-triggers-" ^ writ_name component
+  ^ "-" ^ writ_name state

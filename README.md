@@ -279,6 +279,66 @@ Same pipeline, same exit status. It ships here.
 
 ---
 
+## A second question: which failures can't be told apart
+
+The check above finds contradictions *in the model*. There is a different
+failure the same six situations can show you, and it is about what happens at
+3am.
+
+Look again at situation 4 — the store saturated, the api unreachable. Two
+different things could have happened:
+
+```mermaid
+graph LR
+  A0["store live<br/>api up"] -->|store-fails-saturated| A2["store saturated<br/>api up"]
+  A2 -.->|store-saturated-triggers-api-down| A4["store saturated<br/>api down"]
+  B0["store live<br/>api up"] -->|api-fails-down| B1["store live<br/>api down"]
+  B1 -->|store-fails-saturated| B4["store saturated<br/>api down"]
+```
+
+**The store took the api down with it** — one root cause. Or **the api failed on
+its own and the store saturated separately** — two. Both end in the same place,
+and every fact reads the same either way. There is no probe that separates them,
+because there is nothing left to probe.
+
+`mgtt diagnose` still has to answer. Occam's razor picks the single cause, so it
+names the store — and it is wrong every time the second story is what actually
+happened. That isn't a weakness in the engine; it is a property of this model,
+and it is worth knowing before you're paged rather than after.
+
+`mgtt2writ --rules` writes the questions that find it:
+
+```console
+$ mgtt model export --json > m.json
+$ mgtt2writ         < m.json > m.writ
+$ mgtt2writ --rules < m.json > m.rules
+$ writ derive m.writ m.rules unattributable
+unattributable  (2 rows)
+  4
+  5
+```
+
+Two of the six — the ones where the api is down and something else has also
+failed. In those, "why is the api down?" has two answers and no evidence to
+choose between them.
+
+The fix isn't a better engine. It's a **fact that tells the stories apart** —
+something a probe can read that differs depending on which happened. Add it to
+the type, and the two situations stop being the same situation.
+
+Per-component questions are there too, when you want to know who is affected:
+
+```console
+$ writ derive m.writ m.rules unattributable-api
+```
+
+`store` gets no such relation, and that absence is the answer for it: nothing
+depends on the store, so nothing can push it over, so its failures are always
+its own.
+
+
+---
+
 ## Install
 
 ```sh
@@ -302,6 +362,7 @@ read a file could be invoked a second way nobody documented.
 | | |
 |---|---|
 | `mgtt2writ` | translate stdin to stdout |
+| `mgtt2writ --rules` | write the diagnosability rules instead of the model |
 | `mgtt2writ --strict` | exit 1 if anything was declined |
 | `mgtt2writ --version` | the version this binary was built from |
 

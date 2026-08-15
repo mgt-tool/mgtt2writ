@@ -329,7 +329,8 @@ let emit_originations (b : Buffer.t) (d : doc) (ets : emitted_type list) :
                     (fun (s : Mgtt_ast.state) ->
                       if s.sname <> et.source.default_state then
                         let name =
-                          subject ^ "-fails-" ^ Mgtt_guard.writ_name s.sname
+                          Mgtt_guard.origination_move ~component:c.cname
+                            ~state:s.sname
                         in
                         match Mgtt_expr.parse s.swhen with
                         | Error m ->
@@ -476,13 +477,8 @@ and emit_one_transition b declines emitted (aet : emitted_type)
     (det : emitted_type) (dep : comp) (dependent : comp)
     (failing : Mgtt_ast.state) (target : Mgtt_ast.state) =
   let name =
-    Mgtt_guard.writ_name dep.cname
-    ^ "-"
-    ^ Mgtt_guard.writ_name failing.sname
-    ^ "-triggers-"
-    ^ Mgtt_guard.writ_name dependent.cname
-    ^ "-"
-    ^ Mgtt_guard.writ_name target.sname
+    Mgtt_guard.propagation_move ~dep:dep.cname ~dep_state:failing.sname
+      ~component:dependent.cname ~state:target.sname
   in
   let fail why = declines := { what = name; why } :: !declines in
   match
