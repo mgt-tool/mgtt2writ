@@ -1,0 +1,20 @@
+; The translation tests. OCaml stdlib only, no framework: plain assertions
+; that raise on failure and print a pass summary, which is the shape writ's own
+; suites use and the shape this code arrived in.
+;
+; It links the library and the vendored JSON reader — and NOTHING representing
+; writ's front end. That absence is the point. Two checks in the original suite
+; read the emitted text back through writ's real reader/expander/parser, which
+; is the strongest oracle there is for a text generator: asserting on the text
+; would pass just as happily if the text were confidently wrong. They cannot
+; live here, because vendoring a parser to test against means testing against a
+; COPY that ages out of step with the writ anyone actually runs.
+;
+; They are re-homed in test/pipeline.sh, which runs the real binaries end to
+; end. See docs/testing.md.
+
+(test
+ (name test_mgtt2writ)
+ (deps
+  (glob_files fixtures/*.json))
+ (libraries mgtt2writ writ_json))
