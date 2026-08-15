@@ -1,0 +1,36 @@
+# What this repo produces but does not keep.
+
+# ── OCaml / dune ─────────────────────────────────────────────
+# dune keeps everything in _build; the loose artifacts below appear only when a
+# compiler is invoked by hand, which is exactly when they are least wanted.
+/_build/
+*.install
+*.merlin
+*.cmi
+*.cmo
+*.cmx
+*.cmt
+*.cmti
+*.cma
+*.cmxa
+*.cmxs
+*.o
+*.a
+*.so
+*.exe
+
+# ── opam ─────────────────────────────────────────────────────
+# A switch created inside the checkout (opam switch create .).
+/_opam/
+# mgtt2writ.opam is NOT ignored: it is generated from dune-project by
+# (generate_opam_files true), and `opam pin` / `opam install .` must find it in
+# the sources before anything is built.
+
+# ── Merge and patch leftovers ────────────────────────────────
+*.orig
+*.rej
+
+# ── Editor / OS cruft ────────────────────────────────────────
+.DS_Store
+*.swp
+*~

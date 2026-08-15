@@ -1,0 +1,11 @@
+; JSON, vendored from writ (tooling/json/) rather than depended on: this tool
+; must build with no writ checkout present, and a translator that could not be
+; built without the thing it translates FOR would be a strange dependency to
+; explain. About 300 lines; sync deliberately, never automatically.
+;
+; UNWRAPPED, as it is in writ, so the module names stay [Json] and [Json_parse]
+; and the moved lib/ sources need no edit.
+
+(library
+ (name writ_json)
+ (wrapped false))

@@ -1,0 +1,12 @@
+; The translation: an mgtt export read as a writ model.
+;
+; It depends on [writ_json] to read the export document and NOTHING ELSE — not
+; a data model, not a parser. That is not an accident of what it happens to
+; need: the output is .writ TEXT, so a malformed export can never reach an
+; engine, and the whole mapping stays testable without a filesystem.
+;
+; IO-free. bin/main.ml does the reading and the writing.
+
+(library
+ (name mgtt2writ)
+ (libraries writ_json))
