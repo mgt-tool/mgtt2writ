@@ -410,7 +410,7 @@ let emit_originations (b : Buffer.t) (d : doc) (ets : emitted_type list) :
 let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
     decline list =
   let declines = ref [] in
-  let emitted = ref 0 in
+  let paired = ref 0 in
   buf_add b ";; ---- propagation ----\n";
   buf_add b
     ";; from `failure_modes.<state>.can_cause` on a dependency, matched against\n\
@@ -443,9 +443,11 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
                               List.exists
                                 (fun l -> List.mem l target.striggered)
                                 labels
-                            then
-                              emit_one_transition b declines emitted aet det dep
-                                dependent group failing target)
+                            then begin
+                              incr paired;
+                              emit_one_transition b declines aet det dep
+                                dependent group failing target
+                            end)
                           det.source.states)
                     aet.source.states
               | _ -> ())
@@ -455,13 +457,15 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
      situation, and would then report no findings — the most misleading answer
      this bridge could give. mgtt's protocol needs BOTH halves: a dependency
      declaring `can_cause` and the dependent declaring `triggered_by` for one
-     of those labels. Providers commonly ship the first and omit the second. *)
+     of those labels. Providers commonly ship the first and omit the second.
+     Pairs the emitter then declined do not count: each says why on its own,
+     and this message would blame the labels. *)
   let edges =
     List.fold_left
       (fun n (c : comp) -> n + List.length c.depends)
       0 d.components
   in
-  if !emitted = 0 && edges > 0 then
+  if !paired = 0 && edges > 0 then
     declines :=
       {
         what = string_of_int edges ^ " dependency edges";
@@ -534,9 +538,9 @@ and group_broken ets d members need : (string, string) result =
    dependent's facts to a representative assignment of the triggered state —
    only the cells that actually change, so that `can be broken by` stays
    truthful about what each move touches. *)
-and emit_one_transition b declines emitted (aet : emitted_type)
-    (det : emitted_type) (dep : comp) (dependent : comp) group
-    (failing : Mgtt_ast.state) (target : Mgtt_ast.state) =
+and emit_one_transition b declines (aet : emitted_type) (det : emitted_type)
+    (dep : comp) (dependent : comp) group (failing : Mgtt_ast.state)
+    (target : Mgtt_ast.state) =
   let name =
     Mgtt_guard.propagation_move ~dep:dep.cname ~dep_state:failing.sname
       ~component:dependent.cname ~state:target.sname
@@ -600,8 +604,7 @@ and emit_one_transition b declines emitted (aet : emitted_type)
                           ^ " " ^ v ^ ")")
                         changed
                     in
-                    buf_add b ("  (do  " ^ String.concat " " effects ^ "))\n\n");
-                    incr emitted
+                    buf_add b ("  (do  " ^ String.concat " " effects ^ "))\n\n")
                   end
               | Error m, _, _, _ | _, Error m, _, _ -> fail m
               | _, _, None, _ ->

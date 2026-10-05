@@ -35,6 +35,16 @@ All notable changes to this project are documented here. The format follows
   every named move exists in the emitted model, and it was verified to fail
   when a name is hand-written instead of shared.
 
+### Fixed
+
+- **`--rules` names only moves the model has.** It rebuilt the move list by
+  matching labels alone, so a move the emitter declined (a state no assignment
+  satisfies, and now a malformed redundancy group) was still named, and a rule
+  naming a missing move derives nothing and reads as an all-clear. Candidates
+  are now kept only if the emitted model has them.
+- The *no propagation* decline no longer fires when labels do pair but each
+  resulting move was declined for its own, stated reason; it blamed the labels.
+
 ## [0.1.0]
 
 First release. The translation was extracted from
