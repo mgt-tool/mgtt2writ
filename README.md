@@ -402,8 +402,8 @@ the parts that were harder than they looked.
 ## Testing
 
 ```sh
-make test        # 74 unit checks; no writ needed
-make pipeline    # 3 end-to-end checks against the real binaries
+make test        # 92 unit checks; no writ needed
+make pipeline    # 6 end-to-end checks against the real binaries
 make check       # both
 ```
 

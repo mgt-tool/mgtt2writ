@@ -1,0 +1,22 @@
+# The source of mgtt-export-group.json: mgtt's minishop example with its store
+# doubled, as a redundancy group. Regenerate from an mgtt checkout with
+#
+#   MGTT_HOME=examples/minishop/mgtt-home \
+#     mgtt model export --json mgtt-export-group.yaml > mgtt-export-group.json
+meta:
+  name: minishop-replicated
+  version: "1.0"
+  providers:
+    - mgt-tool/minishop@^0.1.0
+  scenarios: none
+
+components:
+  store-a:
+    type: datastore
+  store-b:
+    type: datastore
+  api:
+    type: service
+    depends:
+      - on: [store-a, store-b]
+        need: 1            # served while either store is

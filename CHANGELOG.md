@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Redundancy groups.** A dependency with `need: k` over n components is read
+  as the group it is, not as n hard dependencies: a member's failure reaches
+  the dependent only once at least n − k + 1 members are out of their default
+  state, the line mgtt's own scenarios draw. Before, writ reported breakages the
+  redundancy prevents. A group naming a member the model lacks, or needing more
+  members than it has, is declined. Exports without `group`/`need` read as
+  before.
+
 - **`mgtt2writ --rules`** — generates diagnosability questions for the model it
   would otherwise emit. Answers *which failures cannot be told apart*: a
   situation reachable both by a component failing on its own and by a dependency
@@ -26,6 +34,16 @@ All notable changes to this project are documented here. The format follows
   match nothing, derive nothing, and report a false all-clear; a test asserts
   every named move exists in the emitted model, and it was verified to fail
   when a name is hand-written instead of shared.
+
+### Fixed
+
+- **`--rules` names only moves the model has.** It rebuilt the move list by
+  matching labels alone, so a move the emitter declined (a state no assignment
+  satisfies, and now a malformed redundancy group) was still named, and a rule
+  naming a missing move derives nothing and reads as an all-clear. Candidates
+  are now kept only if the emitted model has them.
+- The *no propagation* decline no longer fires when labels do pair but each
+  resulting move was declined for its own, stated reason; it blamed the labels.
 
 ## [0.1.0]
 

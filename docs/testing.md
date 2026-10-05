@@ -3,14 +3,14 @@
 Two suites, and the split is forced by an oracle problem rather than chosen for
 tidiness.
 
-## `dune runtest` — 72 unit checks
+## `dune runtest` — 92 unit checks
 
 Everything decidable from the translation alone: reading the export document,
 reducing facts to finite domains, and the shape of the emitted text. No
 filesystem, no binaries, no writ.
 
 ```sh
-dune runtest        # test_mgtt2writ: 72 passed
+dune runtest        # test_mgtt2writ: 92 passed
 ```
 
 Among them is a **pinned real export** at `test/fixtures/mgtt-export-v1.json`,
@@ -21,7 +21,7 @@ document end to end turns that drift into a failure here rather than in a
 user's terminal. Refresh it deliberately, from a real run, when the schema
 version changes.
 
-## `test/pipeline.sh` — 3 end-to-end checks
+## `test/pipeline.sh` — 6 end-to-end checks
 
 This tool emits **text**. Asserting on text passes just as happily when the
 text is confidently wrong: `contains "(schema "` proves nothing about whether a
@@ -41,9 +41,18 @@ MGTT2WRIT=./_build/default/bin/main.exe WRIT=../writ/writ/_build/default/tooling
   sh test/pipeline.sh                   # or point it at builds
 ```
 
-It takes the pinned export as input, so it needs no mgtt checkout — only writ
+It takes the pinned exports as input, so it needs no mgtt checkout — only writ
 and this tool. Exit `0` passed, `1` a check failed, `77` skipped because writ
 is not installed.
+
+The second export, `test/fixtures/mgtt-export-group.json`, is mgtt's minishop
+with its store doubled into a redundancy group (its source model sits beside
+it). Whether a group holds is a question about moves, not situations, and a
+property can only name situations: so the script finds each situation with a
+holding `possible`, whose witness ends at its index, and reads the moves out of
+it with `writ show`. One store down must not offer api's failure; both down
+must. `GROUP_FIXTURE=` swaps in a fresh export, which is how mgtt's downstream
+harness runs these checks against the mgtt under test.
 
 This is a strictly stronger oracle than the linked-parser version it replaces:
 a vendored parser proves *some* parser accepts the output, the real binary

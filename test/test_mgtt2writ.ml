@@ -493,31 +493,136 @@ let test_emit_names_transitions () =
 
 (* A state no assignment satisfies cannot be triggered, and saying so is the
    same finding mgtt's own validate reports for an unreachable state. *)
+let unsat =
+  {|{"mgtt_export_version":1,"name":"x",
+     "components":[
+       {"name":"a","type":"t","depends":[],"healthy":["up == true"],
+        "failure_modes":{"broken":["upstream_failure"]}},
+       {"name":"b","type":"t","depends":[{"on":"a","while":""}],
+        "healthy":["up == true"],"failure_modes":{}}],
+     "types":[
+       {"name":"t","provider":"p",
+        "facts":[{"name":"up","type":"mgtt.bool"}],
+        "healthy":["up == true"],
+        "states":[{"name":"live","when":"up == true","triggered_by":[]},
+                  {"name":"broken","when":"up == false","triggered_by":[]},
+                  {"name":"impossible","when":"up == true & up == false",
+                   "triggered_by":["upstream_failure"]}],
+        "default_active_state":"live","failure_modes":{"broken":["upstream_failure"]}}],
+     "declines":[]}|}
+
 let test_emit_declines_unsatisfiable_state () =
-  let unsat =
-    {|{"mgtt_export_version":1,"name":"x",
-       "components":[
-         {"name":"a","type":"t","depends":[],"healthy":["up == true"],
-          "failure_modes":{"broken":["upstream_failure"]}},
-         {"name":"b","type":"t","depends":[{"on":"a","while":""}],
-          "healthy":["up == true"],"failure_modes":{}}],
-       "types":[
-         {"name":"t","provider":"p",
-          "facts":[{"name":"up","type":"mgtt.bool"}],
-          "healthy":["up == true"],
-          "states":[{"name":"live","when":"up == true","triggered_by":[]},
-                    {"name":"broken","when":"up == false","triggered_by":[]},
-                    {"name":"impossible","when":"up == true & up == false",
-                     "triggered_by":["upstream_failure"]}],
-          "default_active_state":"live","failure_modes":{"broken":["upstream_failure"]}}],
-       "declines":[]}|}
-  in
   let _, declines = Emit_mgtt.file ~name:"x" (doc_of_string unsat) in
   check "emit: an unsatisfiable triggered state is declined"
     (List.exists
        (fun (dc : Mgtt_ast.decline) ->
          contains ~sub:"impossible" dc.Mgtt_ast.what)
        declines)
+
+(* ---- redundancy groups ------------------------------------------------- *)
+
+let index_of ?(from = 0) ~sub s =
+  let ls = String.length s and lsub = String.length sub in
+  let rec go i =
+    if i + lsub > ls then None
+    else if String.sub s i lsub = sub then Some i
+    else go (i + 1)
+  in
+  go from
+
+let replace_once ~sub ~by s =
+  match index_of ~sub s with
+  | None -> failwith ("fixture lacks " ^ sub)
+  | Some i ->
+      let l = String.length sub in
+      String.sub s 0 i ^ by ^ String.sub s (i + l) (String.length s - i - l)
+
+(* [minimal] with a second datastore: api needs [need] of [members], store and
+   replica unless a test says otherwise. *)
+let grouped ?(members = {|"store","replica"|}) ?(need = 1) () =
+  let edge on =
+    Printf.sprintf {|{"on":"%s","while":"","group":[%s],"need":%d}|} on members
+      need
+  in
+  minimal
+  |> replace_once ~sub:{|"depends":[{"on":"store","while":""}]|}
+       ~by:({|"depends":[|} ^ edge "store" ^ "," ^ edge "replica" ^ "]")
+  |> replace_once ~sub:{|{"name":"store","type":"datastore","depends":[],|}
+       ~by:
+         {|{"name":"replica","type":"datastore","depends":[],
+            "healthy":["available == true","connection_count < 500"],
+            "failure_modes":{"stopped":["upstream_failure"]}},
+           {"name":"store","type":"datastore","depends":[],|}
+  |> doc_of_string
+
+(* The emitted transition [name], up to the blank line that ends it. *)
+let transition text name =
+  match index_of ~sub:("(transition " ^ name ^ "\n") text with
+  | None -> ""
+  | Some i -> (
+      match index_of ~from:i ~sub:"\n\n" text with
+      | Some j -> String.sub text i (j - i)
+      | None -> String.sub text i (String.length text - i))
+
+let test_read_groups () =
+  let api d = Option.get (Mgtt_ast.component_of d "api") in
+  check "read: a grouped edge carries the group's members and need"
+    (List.assoc_opt "store" (api (grouped ())).Mgtt_ast.cgroups
+    = Some ([ "store"; "replica" ], 1));
+  check "read: a plain edge carries no group"
+    ((api (doc_of_string minimal)).Mgtt_ast.cgroups = [])
+
+(* need 1 of 2: a store's failure reaches api only while the other store is
+   down too, so each move is guarded by both being out of their default
+   state. *)
+let test_emit_group_guard () =
+  let text, _ = Emit_mgtt.file ~name:"g" (grouped ()) in
+  let both_down =
+    "(and (not (is store.available yes)) (not (is replica.available yes)))"
+  in
+  check "emit: store's failure reaches api only while replica is down too"
+    (contains ~sub:both_down
+       (transition text "store-stopped-triggers-api-degraded"));
+  check "emit: and replica's only while store is"
+    (contains ~sub:both_down
+       (transition text "replica-stopped-triggers-api-degraded"));
+  let plain, _ = Emit_mgtt.file ~name:"p" (doc_of_string minimal) in
+  let move = transition plain "store-stopped-triggers-api-degraded" in
+  check "emit: a hard dependency's move carries no group guard"
+    (move <> "" && not (contains ~sub:"(not" move))
+
+(* need 2 of 2 is a hard dependency on each: any member down breaks it. *)
+let test_emit_group_needing_all () =
+  let text, _ = Emit_mgtt.file ~name:"g" (grouped ~need:2 ()) in
+  check "emit: a group needing every member breaks when any one is down"
+    (contains
+       ~sub:
+         "(or (not (is store.available yes)) (not (is replica.available yes)))"
+       (transition text "store-stopped-triggers-api-degraded"))
+
+let test_emit_group_declines () =
+  let declined d =
+    let _, declines = Emit_mgtt.file ~name:"g" d in
+    List.exists
+      (fun (dc : Mgtt_ast.decline) ->
+        contains ~sub:"redundancy group" dc.Mgtt_ast.why)
+      declines
+  in
+  check "emit: a group naming a component the model lacks is declined"
+    (declined (grouped ~members:{|"store","replica","ghost"|} ()));
+  check "emit: a group needing more members than it has is declined"
+    (declined (grouped ~need:3 ()));
+  check "emit: a well-formed group is not declined"
+    (not (declined (grouped ())));
+  let _, declines =
+    Emit_mgtt.file ~name:"g" (grouped ~members:{|"store","replica","ghost"|} ())
+  in
+  check "emit: declined group moves are not blamed on unpaired labels"
+    (not
+       (List.exists
+          (fun (dc : Mgtt_ast.decline) ->
+            contains ~sub:"no propagation" dc.Mgtt_ast.why)
+          declines))
 
 (* Every component must be able to fail on its own, or the model has no
    dynamics: propagation only relays a failure, so with nothing to originate
@@ -666,17 +771,25 @@ let test_emit_attributes_itself () =
    So: every move the rules mention must appear in the model the emitter emits
    from the same document. *)
 let test_rules_only_name_moves_that_exist () =
-  let d = doc_of_string minimal in
-  let model, _ = Emit_mgtt.file ~name:"storefront" d in
-  let named = Emit_rules.moves_named d in
-  check "rules: some moves are named" (named <> []);
+  check "rules: some moves are named"
+    (Emit_rules.moves_named (doc_of_string minimal) <> []);
   List.iter
-    (fun m ->
-      if not (contains ~sub:("(transition " ^ m ^ "\n") model) then
-        check
-          ("rules: `" ^ m ^ "` is named but the model has no such move")
-          false)
-    named;
+    (fun (what, d) ->
+      let model, _ = Emit_mgtt.file ~name:"m" d in
+      List.iter
+        (fun m ->
+          if not (contains ~sub:("(transition " ^ m ^ "\n") model) then
+            check
+              ("rules, " ^ what ^ ": `" ^ m
+             ^ "` is named but the model has no such move")
+              false)
+        (Emit_rules.moves_named d))
+    [
+      ("minimal", doc_of_string minimal);
+      ("an unsatisfiable state", doc_of_string unsat);
+      ("a redundancy group", grouped ());
+      ("a declined group", grouped ~members:{|"store","replica","ghost"|} ());
+    ];
   check "rules: every named move exists in the model" true
 
 let test_rules_shape () =
@@ -752,6 +865,10 @@ let () =
   test_emit_health_equation ();
   test_emit_names_transitions ();
   test_emit_originations ();
+  test_read_groups ();
+  test_emit_group_guard ();
+  test_emit_group_needing_all ();
+  test_emit_group_declines ();
   test_emit_catches_health_state_divergence ();
   test_emit_declines_unsatisfiable_state ();
   test_emit_forwards_mgtt_declines ();

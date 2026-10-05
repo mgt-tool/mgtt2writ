@@ -19,8 +19,10 @@
 # parser proves "some parser accepts this", the real one proves "the writ you
 # have accepts this", which is the claim a user cares about.
 #
-# Input is the pinned export under fixtures/, so this needs no mgtt checkout —
-# only writ and this tool.
+# Input is the pinned exports under fixtures/, so this needs no mgtt checkout —
+# only writ and this tool. GROUP_FIXTURE= swaps in a fresh export of
+# fixtures/mgtt-export-group.yaml, which is how mgtt's downstream harness runs
+# the group checks against the mgtt under test.
 #
 # Exit: 0 all checks passed, 1 a check failed, 77 skipped (writ not installed).
 
@@ -28,6 +30,7 @@ set -eu
 
 here=$(dirname "$0")
 fixture="$here/fixtures/mgtt-export-v1.json"
+group_fixture=${GROUP_FIXTURE:-$here/fixtures/mgtt-export-group.json}
 m2w=${MGTT2WRIT:-mgtt2writ}
 writ=${WRIT:-writ}
 
@@ -42,7 +45,8 @@ fi
 
 tmp_rules=$(mktemp)
 tmp_model=$(mktemp)
-trap 'rm -f "$tmp_rules" "$tmp_model"' EXIT
+tmp_claims=$(mktemp)
+trap 'rm -f "$tmp_rules" "$tmp_model" "$tmp_claims"' EXIT
 
 fail() {
   echo "pipeline: FAIL — $1"
@@ -91,4 +95,40 @@ grep -q "(relation unattributable 1)" "$tmp_rules" ||
 "$writ" derive "$tmp_model" "$tmp_rules" unattributable >/dev/null 2>&1 ||
   fail "real writ could not answer the generated rules"
 
-echo "pipeline: 4 checks passed (real $writ, $states situations)"
+# ---- a redundancy group holds while enough of its members do ---------------
+#
+# The second fixture is minishop with its store doubled: api needs one of
+# store-a and store-b. Flattened into two hard dependencies, one store's
+# failure could take api down; honoured, that move exists only once both are
+# down. Moves are not something a property can name, so each situation is
+# found by a holding `possible`, whose witness route ends at its index, and
+# the moves out of it are read with `writ show`.
+
+"$m2w" < "$group_fixture" > "$tmp_model" 2>/dev/null ||
+  fail "could not translate the grouped export"
+
+# situation GUARD: the index of a reachable situation satisfying GUARD with api
+# still up.
+situation() {
+  printf '(property here "the situation asked for" (possible (and %s (is api.reachable yes))))\n' "$1" > "$tmp_claims"
+  "$writ" check "$tmp_model" --claims "$tmp_claims" --no-certificate 2>&1 |
+    sed -n 's/.*→ #\([0-9][0-9]*\).*/\1/p' | tail -n 1
+}
+
+# moves_out N: the moves writ offers out of situation N.
+moves_out() {
+  "$writ" show "$tmp_model" --at "$1" 2>&1 | sed -n '/moves:/,$p'
+}
+
+one=$(situation "(is store-a.available no) (is store-b.available yes) (is store-b.connection-count below-500)")
+[ -n "$one" ] || fail "no reachable situation with only store-a down"
+if moves_out "$one" | grep -q store-a-stopped-triggers-api-down; then
+  fail "store-a alone down takes api down: the group was read as hard dependencies"
+fi
+
+both=$(situation "(is store-a.available no) (is store-b.available no)")
+[ -n "$both" ] || fail "no reachable situation with both stores down"
+moves_out "$both" | grep -q store-a-stopped-triggers-api-down ||
+  fail "both stores down cannot take api down: the group never breaks"
+
+echo "pipeline: 6 checks passed (real $writ, $states situations)"

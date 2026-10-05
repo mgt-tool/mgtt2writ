@@ -63,11 +63,21 @@ let read_type j =
 
 let read_dep j = (string_field "on" j, string_field "while" j)
 
+(* An edge of a redundancy group carries the group's members and `need`. mgtt
+   writes both only for grouped edges; a document without them is all hard
+   dependencies, as every export was before groups existed. *)
+let read_group j =
+  match (string_list "group" j, Json.member "need" j) with
+  | (_ :: _ as members), Some (Json.Int need) when need > 0 ->
+      Some (string_field "on" j, (members, need))
+  | _ -> None
+
 let read_comp j =
   {
     cname = string_field "name" j;
     ctype = string_field "type" j;
     depends = List.map read_dep (list_field "depends" j);
+    cgroups = List.filter_map read_group (list_field "depends" j);
     chealthy = string_list "healthy" j;
     cmodes = modes_field "failure_modes" j;
   }

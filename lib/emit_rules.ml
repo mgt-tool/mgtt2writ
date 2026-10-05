@@ -56,10 +56,27 @@ type component_moves = {
 let state_named (ty : ty) (name : string) : state option =
   List.find_opt (fun (s : state) -> s.sname = name) ty.states
 
-(* Rebuilds exactly what the emitter emitted, from the same document and the
-   same naming functions. Anything the emitter declined is absent here too,
-   because the conditions are the same ones. *)
-let moves_of (d : doc) (c : comp) : component_moves option =
+(* The moves the emitter writes for [d], read back from its output. Matching
+   labels says which moves could exist; whether one does also depends on every
+   reason the emitter has to decline it — a target state nothing satisfies, a
+   malformed redundancy group — and repeating those conditions here would be a
+   second copy free to drift. *)
+let emitted_moves (d : doc) : string list =
+  let text, _ = Emit_mgtt.file ~name:d.name d in
+  let prefix = "(transition " in
+  let lp = String.length prefix in
+  List.filter_map
+    (fun line ->
+      if String.length line > lp && String.sub line 0 lp = prefix then
+        Some (String.sub line lp (String.length line - lp))
+      else None)
+    (String.split_on_char '\n' text)
+
+(* Rebuilds what the emitter emitted, from the same document and the same
+   naming functions: the candidates by label, kept only if [emitted] has them,
+   so a move the emitter declined is absent here too. *)
+let moves_of (emitted : string list) (d : doc) (c : comp) :
+    component_moves option =
   match Mgtt_ast.type_of d c.ctype with
   | None -> None
   | Some ty ->
@@ -104,14 +121,17 @@ let moves_of (d : doc) (c : comp) : component_moves option =
             | _ -> [])
           c.depends
       in
-      let dedup = List.sort_uniq compare in
+      let kept ms =
+        List.sort_uniq compare (List.filter (fun m -> List.mem m emitted) ms)
+      in
+      let self = kept self and dep = kept dep in
       if self = [] || dep = [] then None
       else
         Some
           {
             cm_name = Mgtt_guard.writ_name c.cname;
-            cm_self = dedup self;
-            cm_dep = dedup dep;
+            cm_self = self;
+            cm_dep = dep;
           }
 
 (* "Reached after E fired" — a one-pass walk forward from every edge named E,
@@ -128,7 +148,7 @@ let emit_reached (b : Buffer.t) ~(rel : string) ~(moves : string list) =
 
 let file ~(name : string) (d : doc) : string =
   let b = Buffer.create 2048 in
-  let per = List.filter_map (moves_of d) d.components in
+  let per = List.filter_map (moves_of (emitted_moves d) d) d.components in
 
   buf_add b
     (";; Diagnosability rules for the mgtt model `"
@@ -189,4 +209,4 @@ let file ~(name : string) (d : doc) : string =
 let moves_named (d : doc) : string list =
   List.concat_map
     (fun cm -> cm.cm_self @ cm.cm_dep)
-    (List.filter_map (moves_of d) d.components)
+    (List.filter_map (moves_of (emitted_moves d) d) d.components)

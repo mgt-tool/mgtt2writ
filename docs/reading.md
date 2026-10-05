@@ -259,6 +259,29 @@ degrading twice.
 Moves are named, always. A witness route prints move names, and an unnamed move
 makes the route unreadable, which is most of what a route is for.
 
+### Redundancy groups
+
+A dependency on several components with `need: k` is a redundancy group: the
+dependent is served while k of its n members are healthy. The export gives each
+grouped edge the group's members and `need`, and a member's propagation move
+gains a third conjunct, *the group no longer holds*: at least n − k + 1 members
+are out of their default state. With `api` needing one of two stores:
+
+```lisp
+(transition store-a-stopped-triggers-api-down
+  (when (and (is store-a.available no) (is api.reachable yes)
+             (and (not (and (is store-a.available yes) (is store-a.connection-count below-500)))
+                  (not (and (is store-b.available yes) (is store-b.connection-count below-500))))))
+  (do  (set api.reachable no)))
+```
+
+One store down, and the move is not offered; both down, and it is. That is
+the line mgtt's own scenarios draw — a failure crosses a group only from a root
+reaching more than n − k members — so writ does not report a breakage the
+redundancy prevents. In general the conjunct is an `or` over every set of
+n − k + 1 members; groups are a handful of replicas or colours, so the sets are
+few.
+
 ## 7. What an answer costs
 
 The standing worry about the direct translation is the product: twenty
@@ -300,6 +323,7 @@ placeholder would otherwise bury the one decline that mattered.
 | a non-integer constant | no member name, and no ordering worth inventing |
 | a fact no predicate mentions | no regions to name, so no arrow to make |
 | a state no assignment satisfies | it is unreachable, which is a finding in itself |
+| a redundancy group naming a member the model lacks, or needing more members than it has | its propagation has no reading; treating it as hard dependencies would report breakages the group prevents |
 | a model whose dependencies pair no `can_cause` with a `triggered_by` | it has no moves at all, and would report clean |
 | mgtt's own declines | forwarded unchanged |
 
