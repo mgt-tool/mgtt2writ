@@ -27,13 +27,24 @@ All notable changes to this project are documented here. The format follows
   A component nothing depends on gets no relation at all — its failures are
   always its own — and a model with no propagation says **NOTHING TO ASK**
   rather than answering empty, because an empty answer and a model whose types
-  forgot `triggered_by` look identical otherwise.
+  forgot `can_cause` look identical otherwise.
 
   The rules name concrete moves, so both they and the model are spelled by one
   pair of functions in `Mgtt_guard`. Rules naming a move the model lacks would
   match nothing, derive nothing, and report a false all-clear; a test asserts
   every named move exists in the emitted model, and it was verified to fail
   when a name is hand-written instead of shared.
+
+### Changed
+
+- **Propagation follows mgtt's own rule.** A failure state that lists no
+  `triggered_by` labels answers to any `can_cause` label, as mgtt's scenarios
+  have it; before, it answered to none, so a model on provider types that leave
+  `triggered_by` out (the kubernetes and aws ones, for a start) relayed no
+  failure across any edge. Neither side's default state takes part. The
+  `--rules` move list follows the same rule, from one shared function. A
+  `while:` guard is still read as mgtt's scenarios read it, as an edge that may
+  be active; [docs/reading.md](docs/reading.md) says why.
 
 ### Fixed
 

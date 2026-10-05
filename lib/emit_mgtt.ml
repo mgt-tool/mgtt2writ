@@ -404,17 +404,20 @@ let emit_originations (b : Buffer.t) (d : doc) (ets : emitted_type list) :
   List.rev !declines
 
 (* mgtt's propagation protocol, as transitions. A failing state of a dependency
-   emits `can_cause` labels; a state of the dependent declaring any of them in
-   `triggered_by` becomes reachable from it. One transition per matching
-   triple, named so that a witness route reads as a failure chain. *)
+   emits `can_cause` labels; a failure state of the dependent whose
+   `triggered_by` names one of them, or names none, becomes reachable from it
+   ([Mgtt_ast.triggers]). One transition per matching pair of states, named so
+   that a witness route reads as a failure chain. *)
 let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
     decline list =
   let declines = ref [] in
   let paired = ref 0 in
   buf_add b ";; ---- propagation ----\n";
   buf_add b
-    ";; from `failure_modes.<state>.can_cause` on a dependency, matched against\n\
-     ;; `states.<state>.triggered_by` on the component that depends on it.\n\n";
+    ";; from `failure_modes.<state>.can_cause` on a dependency, into each \
+     failure\n\
+     ;; state of the component depending on it whose `triggered_by` names one of\n\
+     ;; those labels, or names none.\n\n";
   List.iter
     (fun (dependent : comp) ->
       match type_of_component ets dependent.cname with
@@ -435,31 +438,29 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
                   in
                   List.iter
                     (fun (failing : Mgtt_ast.state) ->
-                      let labels = Mgtt_ast.can_cause dep failing.sname in
-                      if labels <> [] then
-                        List.iter
-                          (fun (target : Mgtt_ast.state) ->
-                            if
-                              List.exists
-                                (fun l -> List.mem l target.striggered)
-                                labels
-                            then begin
-                              incr paired;
-                              emit_one_transition b declines aet det dep
-                                dependent group failing target
-                            end)
-                          det.source.states)
+                      List.iter
+                        (fun (target : Mgtt_ast.state) ->
+                          if
+                            Mgtt_ast.triggers dep aet.source failing det.source
+                              target
+                          then begin
+                            incr paired;
+                            emit_one_transition b declines aet det dep dependent
+                              group failing target
+                          end)
+                        det.source.states)
                     aet.source.states
               | _ -> ())
             dependent.depends)
     d.components;
-  (* A model with dependency edges but no propagation enumerates exactly one
-     situation, and would then report no findings — the most misleading answer
-     this bridge could give. mgtt's protocol needs BOTH halves: a dependency
-     declaring `can_cause` and the dependent declaring `triggered_by` for one
-     of those labels. Providers commonly ship the first and omit the second.
-     Pairs the emitter then declined do not count: each says why on its own,
-     and this message would blame the labels. *)
+  (* A model with dependency edges but no propagation relays no failure across
+     any of them: each component fails only on its own, and every question
+     about a failure chain answers vacuously — a misleading answer to give
+     quietly. It happens when no dependency's failure state declares a
+     `can_cause` label, or when every failure state of the dependents names
+     other labels in `triggered_by`. Pairs the emitter then declined do not
+     count: each says why on its own, and this message would blame the
+     labels. *)
   let edges =
     List.fold_left
       (fun n (c : comp) -> n + List.length c.depends)
@@ -470,10 +471,10 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
       {
         what = string_of_int edges ^ " dependency edges";
         why =
-          "no propagation: nothing pairs a dependency's \
-           `failure_modes.<state>.can_cause` label with a \
-           `states.<state>.triggered_by` on the component that depends on it, \
-           so the model has no moves and enumerates one situation";
+          "no propagation: no dependency's failure state declares a \
+           `failure_modes.<state>.can_cause` label that a failure state of the \
+           component depending on it answers to, so no failure crosses a \
+           dependency edge";
       }
       :: !declines;
   List.rev !declines

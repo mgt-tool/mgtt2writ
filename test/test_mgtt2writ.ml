@@ -519,6 +519,40 @@ let test_emit_declines_unsatisfiable_state () =
          contains ~sub:"impossible" dc.Mgtt_ast.what)
        declines)
 
+(* mgtt's permissive default, which its scenarios enumerate by: a failure
+   state naming no `triggered_by` labels answers to any; one naming some
+   answers only to those. Neither side's default state takes part, even when a
+   provider gives it `can_cause` labels. *)
+let permissive =
+  {|{"mgtt_export_version":1,"name":"p",
+     "components":[
+       {"name":"a","type":"t","depends":[],"healthy":["up == true","load < 10"],
+        "failure_modes":{"live":["upstream_failure"],"broken":["upstream_failure"]}},
+       {"name":"b","type":"t","depends":[{"on":"a","while":""}],
+        "healthy":["up == true","load < 10"],"failure_modes":{}}],
+     "types":[
+       {"name":"t","provider":"p",
+        "facts":[{"name":"up","type":"mgtt.bool"},{"name":"load","type":"mgtt.int"}],
+        "healthy":["up == true","load < 10"],
+        "states":[{"name":"live","when":"up == true & load < 10","triggered_by":[]},
+                  {"name":"broken","when":"up == false","triggered_by":[]},
+                  {"name":"busy","when":"up == true & load >= 10",
+                   "triggered_by":["overload"]}],
+        "default_active_state":"live",
+        "failure_modes":{"broken":["upstream_failure"]}}],
+     "declines":[]}|}
+
+let test_emit_permissive_triggered_by () =
+  let text, _ = Emit_mgtt.file ~name:"p" (doc_of_string permissive) in
+  check "emit: a failure state naming no triggered_by answers to any label"
+    (contains ~sub:"(transition a-broken-triggers-b-broken\n" text);
+  check "emit: one naming other labels does not"
+    (not (contains ~sub:"a-broken-triggers-b-busy" text));
+  check "emit: the dependent's default state is never a target"
+    (not (contains ~sub:"triggers-b-live" text));
+  check "emit: the dependency's default state is not a failure"
+    (not (contains ~sub:"(transition a-live-triggers" text))
+
 (* ---- redundancy groups ------------------------------------------------- *)
 
 let index_of ?(from = 0) ~sub s =
@@ -787,6 +821,7 @@ let test_rules_only_name_moves_that_exist () =
     [
       ("minimal", doc_of_string minimal);
       ("an unsatisfiable state", doc_of_string unsat);
+      ("the permissive default", doc_of_string permissive);
       ("a redundancy group", grouped ());
       ("a declined group", grouped ~members:{|"store","replica","ghost"|} ());
     ];
@@ -806,13 +841,13 @@ let test_rules_shape () =
 
 (* A model with no propagation has no ambiguity of this kind, and saying so
    plainly matters: it is also exactly what a model whose types forgot
-   `triggered_by` looks like, and reading that as an all-clear would be wrong. *)
+   `can_cause` looks like, and reading that as an all-clear would be wrong. *)
 let test_rules_says_when_there_is_nothing_to_ask () =
   let no_prop =
     {|{"mgtt_export_version":1,"name":"flat",
        "components":[
          {"name":"a","type":"t","depends":[],"healthy":["up == true"],
-          "failure_modes":{"broken":["upstream_failure"]}},
+          "failure_modes":{}},
          {"name":"b","type":"t","depends":[{"on":"a","while":""}],
           "healthy":["up == true"],"failure_modes":{}}],
        "types":[
@@ -822,7 +857,7 @@ let test_rules_says_when_there_is_nothing_to_ask () =
           "states":[{"name":"live","when":"up == true","triggered_by":[]},
                     {"name":"broken","when":"up == false","triggered_by":[]}],
           "default_active_state":"live",
-          "failure_modes":{"broken":["upstream_failure"]}}],
+          "failure_modes":{}}],
        "declines":[]}|}
   in
   let r = Emit_rules.file ~name:"flat" (doc_of_string no_prop) in
@@ -830,8 +865,8 @@ let test_rules_says_when_there_is_nothing_to_ask () =
     (contains ~sub:"NOTHING TO ASK" r);
   check "rules: still declares the relation, so the query answers empty"
     (contains ~sub:"(relation unattributable 1)" r);
-  check "rules: warns that a missing triggered_by looks the same"
-    (contains ~sub:"triggered_by" r)
+  check "rules: warns that a missing can_cause looks the same"
+    (contains ~sub:"can_cause" r)
 
 let () =
   test_read ();
@@ -865,6 +900,7 @@ let () =
   test_emit_health_equation ();
   test_emit_names_transitions ();
   test_emit_originations ();
+  test_emit_permissive_triggered_by ();
   test_read_groups ();
   test_emit_group_guard ();
   test_emit_group_needing_all ();

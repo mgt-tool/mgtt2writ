@@ -3,14 +3,14 @@
 Two suites, and the split is forced by an oracle problem rather than chosen for
 tidiness.
 
-## `dune runtest` — 92 unit checks
+## `dune runtest` — 96 unit checks
 
 Everything decidable from the translation alone: reading the export document,
 reducing facts to finite domains, and the shape of the emitted text. No
 filesystem, no binaries, no writ.
 
 ```sh
-dune runtest        # test_mgtt2writ: 92 passed
+dune runtest        # test_mgtt2writ: 96 passed
 ```
 
 Among them is a **pinned real export** at `test/fixtures/mgtt-export-v1.json`,

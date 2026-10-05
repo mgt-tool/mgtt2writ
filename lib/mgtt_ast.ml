@@ -80,3 +80,21 @@ let components_of_type (d : doc) (tyname : string) : comp list =
    effective ledger. *)
 let can_cause (c : comp) (state : string) : string list =
   match List.assoc_opt state c.cmodes with Some ls -> ls | None -> []
+
+(* Whether [dep], failing into [failing], can put a component of type [ty] into
+   [target]: mgtt's own rule, the one its scenarios enumerate by. Only failure
+   states take part on either side: [failing] is not [dep_ty]'s default and
+   emits at least one `can_cause` label, and [target] is not [ty]'s default. A
+   target whose `triggered_by` names labels answers to those; one naming none
+   answers to any. That permissive default is what a provider omitting
+   `triggered_by` gets from mgtt, and most of them omit it. *)
+let triggers (dep : comp) (dep_ty : ty) (failing : state) (ty : ty)
+    (target : state) : bool =
+  let labels =
+    if failing.sname = dep_ty.default_state then []
+    else can_cause dep failing.sname
+  in
+  labels <> []
+  && target.sname <> ty.default_state
+  && (target.striggered = []
+     || List.exists (fun l -> List.mem l target.striggered) labels)
