@@ -101,22 +101,16 @@ let moves_of (emitted : string list) (d : doc) (c : comp) :
                 | Some dep_ty ->
                     List.concat_map
                       (fun (failing : state) ->
-                        let labels = Mgtt_ast.can_cause dep_c failing.sname in
-                        if labels = [] then []
-                        else
-                          List.filter_map
-                            (fun (target : state) ->
-                              if
-                                List.exists
-                                  (fun l -> List.mem l target.striggered)
-                                  labels
-                              then
-                                Some
-                                  (Mgtt_guard.propagation_move ~dep:dep_c.cname
-                                     ~dep_state:failing.sname ~component:c.cname
-                                     ~state:target.sname)
-                              else None)
-                            ty.states)
+                        List.filter_map
+                          (fun (target : state) ->
+                            if Mgtt_ast.triggers dep_c dep_ty failing ty target
+                            then
+                              Some
+                                (Mgtt_guard.propagation_move ~dep:dep_c.cname
+                                   ~dep_state:failing.sname ~component:c.cname
+                                   ~state:target.sname)
+                            else None)
+                          ty.states)
                       dep_ty.states)
             | _ -> [])
           c.depends
@@ -172,8 +166,8 @@ let file ~(name : string) (d : doc) : string =
       ";; NOTHING TO ASK. No component of this model can be reached BOTH by\n\
        ;; failing on its own and by a dependency pushing it over, so no failure\n\
        ;; here is ambiguous in that way. A model whose types declare no\n\
-       ;; `triggered_by` has no propagation at all and will always land here —\n\
-       ;; which is worth checking before reading this as an all-clear.\n\n\
+       ;; `can_cause` labels has no propagation at all and will always land\n\
+       ;; here — which is worth checking before reading this as an all-clear.\n\n\
        (relation unattributable 1)\n";
     Buffer.contents b
   end

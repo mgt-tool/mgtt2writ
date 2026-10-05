@@ -228,14 +228,16 @@ model that says nothing while appearing to pass.
 mgtt supplies the origin from outside: an injected fact in a scenario, a probe
 result at 3am. Its own scenario enumerator supplies it the same way, by taking
 each component in turn as the root cause. Measured on the four-component
-worked model: **1 situation and 0 edges without these moves, 64 and 268 with.**
+worked model: **1 situation and 0 edges without these moves, 64 and 324 with.**
 
-### Propagation, from mgtt's own label protocol
+### Propagation, by mgtt's own rule
 
 mgtt declares propagation in two halves: a failing state emits `can_cause`
-labels, and a state of a dependent declares `triggered_by` labels it answers
-to. One transition per matching (dependency edge × emitted label × triggered
-state):
+labels, and a failure state of a dependent may list in `triggered_by` the labels
+it answers to. One that lists none answers to any. That permissive default is
+the rule mgtt's scenarios enumerate by, and most providers rely on it: they
+declare `can_cause` and leave `triggered_by` out. Neither side's default state
+takes part. One transition per dependency edge and matching pair of states:
 
 ```lisp
 (transition store-stopped-triggers-api-degraded
@@ -282,6 +284,16 @@ redundancy prevents. In general the conjunct is an `or` over every set of
 n − k + 1 members; groups are a handful of replicas or colours, so the sets are
 few.
 
+### Conditional edges
+
+A `while:` guard is read as mgtt's scenarios read it: the edge may be active,
+so propagation crosses it. Which side is live, the colour a Service selects
+for instance, is a fact diagnosis reads at the time rather than part of the
+failure model, and fixing it here would pick one configuration and answer
+every question about the other with silence. Reading every guarded edge as
+possible errs the other way: a chain the guard would block can appear, and a
+real one is never hidden.
+
 ## 7. What an answer costs
 
 The standing worry about the direct translation is the product: twenty
@@ -294,7 +306,7 @@ reachable set is not the product of the state domains but the set of *consistent
 failure configurations* — which is the set mgtt's own enumerator walks when it
 writes `scenarios.yaml`.
 
-Measured, on the same four-component model: writ reports 64 situations and 268
+Measured, on the same four-component model: writ reports 64 situations and 324
 edges; mgtt's enumerator writes 76 chains. The two count different objects — a
 chain is a route from a root cause, a situation is a whole-system configuration
 — so neither number bounds the other, and the point is not that one is smaller.
@@ -324,15 +336,15 @@ placeholder would otherwise bury the one decline that mattered.
 | a fact no predicate mentions | no regions to name, so no arrow to make |
 | a state no assignment satisfies | it is unreachable, which is a finding in itself |
 | a redundancy group naming a member the model lacks, or needing more members than it has | its propagation has no reading; treating it as hard dependencies would report breakages the group prevents |
-| a model whose dependencies pair no `can_cause` with a `triggered_by` | it has no moves at all, and would report clean |
+| a model whose dependencies relay no failure: no `can_cause` label that a dependent's failure state answers to | each component then fails only on its own, and every question about a failure chain answers vacuously |
 | mgtt's own declines | forwarded unchanged |
 
-The last two deserve their standing. A model with dependencies but no
-propagation enumerates one situation and reports no findings — the most
-misleading answer this bridge could give, and the shape a provider ships when
-it declares `can_cause` and omits the other half. And a `state` nothing can
-satisfy is the same finding mgtt's own validation reports for a `triggered_by`
-label with no producer, arrived at independently.
+Two of these deserve their standing. A model with dependencies but no
+propagation reports nothing about any failure chain — a misleading answer to
+give quietly, and the shape a provider ships when its types declare no
+`can_cause`. And a `state` nothing can satisfy is the same finding mgtt's own
+validation reports for a `triggered_by` label with no producer, arrived at
+independently.
 
 Two things are **out of scope by design** rather than declined, and the
 distinction is the one writ already draws between a `gap` and a dead end. Probe
@@ -344,13 +356,16 @@ staleness stay with mgtt: writ has no clock.
 
 ```console
 $ mgtt model export --json | mgtt2writ | writ check --stdin
-states: 64   edges: 268
+states: 64   edges: 324
+regime: committing — no move can be undone
 gaps: none
 dead ends: 9
-  reached by: api-fails-degraded, edge-fails-draining, frontend-fails-degraded, store-fails-stopped
+  #55  reached by: api-fails-degraded, edge-fails-draining, frontend-fails-degraded, store-fails-stopped   (…)
+  …
 equation datastore-store-health-matches-state
   can be broken by: store-fails-stopped   (acknowledge in claims)
-  violated in 32 reachable situations   witness: 1. store-fails-stopped
+  violated in 32 reachable situations   witness: 1. store-fails-stopped → #8
+…
 $ echo $?
 1
 ```
