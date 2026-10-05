@@ -48,6 +48,10 @@ type comp = {
   ctype : string;
   depends : (string * string) list;
       (** target, and the while-guard ("" when the edge is always active) *)
+  cgroups : (string * (string list * int)) list;
+      (** target -> the redundancy group it belongs to: its members, and how
+          many must stay healthy for the group to hold. A target absent here is
+          a plain, hard dependency. *)
   chealthy : string list;  (** already effective: mgtt applied the override *)
   cmodes : (string * string list) list;
 }

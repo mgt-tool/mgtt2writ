@@ -1,7 +1,7 @@
 # mgtt2writ — an mgtt model export, translated into a writ model.
 #
 #   make build       # compile
-#   make test        # the unit suite (72 checks, no writ needed)
+#   make test        # the unit suite (91 checks, no writ needed)
 #   make pipeline    # the end-to-end check (needs writ on PATH)
 #   make check       # both
 #   make lint        # format check + warnings-as-errors typecheck

@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Redundancy groups.** A dependency with `need: k` over n components is read
+  as the group it is, not as n hard dependencies: a member's failure reaches
+  the dependent only once at least n − k + 1 members are out of their default
+  state, the line mgtt's own scenarios draw. Before, writ reported breakages the
+  redundancy prevents. A group naming a member the model lacks, or needing more
+  members than it has, is declined. Exports without `group`/`need` read as
+  before.
+
 - **`mgtt2writ --rules`** — generates diagnosability questions for the model it
   would otherwise emit. Answers *which failures cannot be told apart*: a
   situation reachable both by a component failing on its own and by a dependency

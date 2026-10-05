@@ -427,6 +427,12 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
                   type_of_component ets dep_name )
               with
               | Some dep, Some aet ->
+                  let group =
+                    match List.assoc_opt dep_name dependent.cgroups with
+                    | None -> None
+                    | Some (members, need) ->
+                        Some (group_broken ets d members need)
+                  in
                   List.iter
                     (fun (failing : Mgtt_ast.state) ->
                       let labels = Mgtt_ast.can_cause dep failing.sname in
@@ -439,7 +445,7 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
                                 labels
                             then
                               emit_one_transition b declines emitted aet det dep
-                                dependent failing target)
+                                dependent group failing target)
                           det.source.states)
                     aet.source.states
               | _ -> ())
@@ -468,88 +474,149 @@ let rec emit_transitions (b : Buffer.t) (d : doc) (ets : emitted_type list) :
       :: !declines;
   List.rev !declines
 
+(* A redundancy group of n members holds while `need` of them are healthy, so
+   a member's failure reaches the dependent only once at least n - need + 1
+   members are out of their default state. As a guard: an `or` over every set
+   of that many members, each an `and` of their default-state guards negated.
+   Groups are small (a handful of replicas or colours), so the sets are few. *)
+and group_broken ets d members need : (string, string) result =
+  let negated m =
+    match (Mgtt_ast.component_of d m, type_of_component ets m) with
+    | Some _, Some mt -> (
+        match state_named mt.source mt.source.default_state with
+        | None -> Error ("group member `" ^ m ^ "` has no default state")
+        | Some active -> (
+            match Mgtt_expr.parse active.swhen with
+            | Error e -> Error ("group member `" ^ m ^ "`: " ^ e)
+            | Ok e -> (
+                match
+                  Mgtt_guard.to_writ_opt mt.doms
+                    ~subject:(Mgtt_guard.writ_name m) e
+                with
+                | Ok g -> Ok ("(not " ^ g ^ ")")
+                | Error e -> Error ("group member `" ^ m ^ "`: " ^ e))))
+    | _ -> Error ("group member `" ^ m ^ "` is not in the model")
+  in
+  let rec choose k = function
+    | _ when k = 0 -> [ [] ]
+    | [] -> []
+    | x :: rest ->
+        List.map (fun c -> x :: c) (choose (k - 1) rest) @ choose k rest
+  in
+  let rec collect acc = function
+    | [] -> Ok (List.rev acc)
+    | m :: rest -> (
+        match negated m with
+        | Ok g -> collect (g :: acc) rest
+        | Error e -> Error e)
+  in
+  let n = List.length members in
+  if need > n then
+    Error
+      ("needs " ^ string_of_int need ^ " of its " ^ string_of_int n ^ " members")
+  else
+    match collect [] members with
+    | Error e -> Error e
+    | Ok guards ->
+        let conj = function
+          | [ g ] -> g
+          | gs -> "(and " ^ String.concat " " gs ^ ")"
+        in
+        let sets = choose (n - need + 1) guards in
+        Ok
+          (match sets with
+          | [ s ] -> conj s
+          | ss -> "(or " ^ String.concat " " (List.map conj ss) ^ ")")
+
 (* One propagation move: the dependency is failing, the dependent is still in
-   its default active state, and the effect writes the dependent's facts to a
-   representative assignment of the triggered state — only the cells that
-   actually change, so that `can be broken by` stays truthful about what each
-   move touches. *)
+   its default active state, and — when the dependency is one member of a
+   redundancy group — the group no longer holds. The effect writes the
+   dependent's facts to a representative assignment of the triggered state —
+   only the cells that actually change, so that `can be broken by` stays
+   truthful about what each move touches. *)
 and emit_one_transition b declines emitted (aet : emitted_type)
-    (det : emitted_type) (dep : comp) (dependent : comp)
+    (det : emitted_type) (dep : comp) (dependent : comp) group
     (failing : Mgtt_ast.state) (target : Mgtt_ast.state) =
   let name =
     Mgtt_guard.propagation_move ~dep:dep.cname ~dep_state:failing.sname
       ~component:dependent.cname ~state:target.sname
   in
   let fail why = declines := { what = name; why } :: !declines in
-  match
-    ( Mgtt_expr.parse failing.swhen,
-      Mgtt_expr.parse target.swhen,
-      state_named det.source det.source.default_state )
-  with
-  | Ok fail_e, Ok target_e, Some active -> (
-      match Mgtt_expr.parse active.swhen with
-      | Error m -> fail ("default state guard not readable: " ^ m)
-      | Ok active_e -> (
-          match
-            ( Mgtt_guard.to_writ_opt aet.doms
-                ~subject:(Mgtt_guard.writ_name dep.cname)
-                fail_e,
-              Mgtt_guard.to_writ_opt det.doms
-                ~subject:(Mgtt_guard.writ_name dependent.cname)
-                active_e,
-              Mgtt_guard.witness det.doms target_e,
-              Mgtt_guard.witness det.doms active_e )
-          with
-          | Ok fail_g, Ok active_g, Some target_a, Some active_a ->
-              let changed =
-                List.filter
-                  (fun (k, v) -> List.assoc_opt k active_a <> Some v)
-                  target_a
-              in
-              if changed = [] then
-                fail
-                  ("state `" ^ target.sname
-                 ^ "` is realised by the same facts as the default state, so \
-                    the move would change nothing")
-              else begin
-                buf_add b
-                  (";; " ^ dep.cname ^ "." ^ failing.sname ^ " -> "
-                 ^ dependent.cname ^ "." ^ target.sname ^ "\n");
-                buf_add b ("(transition " ^ name ^ "\n");
-                buf_add b ("  (when (and " ^ fail_g ^ " " ^ active_g ^ "))\n");
-                let effects =
-                  List.map
-                    (fun (k, v) ->
-                      let dm =
-                        List.find
-                          (fun (x : Mgtt_domains.domain) ->
-                            x.Mgtt_domains.dfact = k)
-                          det.doms
-                      in
-                      "(set "
-                      ^ Mgtt_guard.writ_name dependent.cname
-                      ^ "."
-                      ^ Mgtt_guard.arrow_of_domain dm
-                      ^ " " ^ v ^ ")")
-                    changed
-                in
-                buf_add b ("  (do  " ^ String.concat " " effects ^ "))\n\n");
-                incr emitted
-              end
-          | Error m, _, _, _ | _, Error m, _, _ -> fail m
-          | _, _, None, _ ->
-              fail
-                ("no assignment of facts satisfies state `" ^ target.sname
-               ^ "`, so nothing can trigger it")
-          | _, _, _, None ->
-              fail
-                ("no assignment of facts satisfies the default state `"
-               ^ det.source.default_state ^ "`")))
-  | Error m, _, _ | _, Error m, _ -> fail ("state guard not readable: " ^ m)
-  | _, _, None ->
-      fail
-        ("default_active_state `" ^ det.source.default_state
-       ^ "` is not a declared state")
+  match group with
+  | Some (Error why) -> fail ("redundancy group: " ^ why)
+  | _ -> (
+      let group_g = match group with Some (Ok g) -> " " ^ g | _ -> "" in
+      match
+        ( Mgtt_expr.parse failing.swhen,
+          Mgtt_expr.parse target.swhen,
+          state_named det.source det.source.default_state )
+      with
+      | Ok fail_e, Ok target_e, Some active -> (
+          match Mgtt_expr.parse active.swhen with
+          | Error m -> fail ("default state guard not readable: " ^ m)
+          | Ok active_e -> (
+              match
+                ( Mgtt_guard.to_writ_opt aet.doms
+                    ~subject:(Mgtt_guard.writ_name dep.cname)
+                    fail_e,
+                  Mgtt_guard.to_writ_opt det.doms
+                    ~subject:(Mgtt_guard.writ_name dependent.cname)
+                    active_e,
+                  Mgtt_guard.witness det.doms target_e,
+                  Mgtt_guard.witness det.doms active_e )
+              with
+              | Ok fail_g, Ok active_g, Some target_a, Some active_a ->
+                  let changed =
+                    List.filter
+                      (fun (k, v) -> List.assoc_opt k active_a <> Some v)
+                      target_a
+                  in
+                  if changed = [] then
+                    fail
+                      ("state `" ^ target.sname
+                     ^ "` is realised by the same facts as the default state, \
+                        so the move would change nothing")
+                  else begin
+                    buf_add b
+                      (";; " ^ dep.cname ^ "." ^ failing.sname ^ " -> "
+                     ^ dependent.cname ^ "." ^ target.sname ^ "\n");
+                    buf_add b ("(transition " ^ name ^ "\n");
+                    buf_add b
+                      ("  (when (and " ^ fail_g ^ " " ^ active_g ^ group_g
+                     ^ "))\n");
+                    let effects =
+                      List.map
+                        (fun (k, v) ->
+                          let dm =
+                            List.find
+                              (fun (x : Mgtt_domains.domain) ->
+                                x.Mgtt_domains.dfact = k)
+                              det.doms
+                          in
+                          "(set "
+                          ^ Mgtt_guard.writ_name dependent.cname
+                          ^ "."
+                          ^ Mgtt_guard.arrow_of_domain dm
+                          ^ " " ^ v ^ ")")
+                        changed
+                    in
+                    buf_add b ("  (do  " ^ String.concat " " effects ^ "))\n\n");
+                    incr emitted
+                  end
+              | Error m, _, _, _ | _, Error m, _, _ -> fail m
+              | _, _, None, _ ->
+                  fail
+                    ("no assignment of facts satisfies state `" ^ target.sname
+                   ^ "`, so nothing can trigger it")
+              | _, _, _, None ->
+                  fail
+                    ("no assignment of facts satisfies the default state `"
+                   ^ det.source.default_state ^ "`")))
+      | Error m, _, _ | _, Error m, _ -> fail ("state guard not readable: " ^ m)
+      | _, _, None ->
+          fail
+            ("default_active_state `" ^ det.source.default_state
+           ^ "` is not a declared state"))
 
 (* ---- the file ------------------------------------------------------------ *)
 
