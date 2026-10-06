@@ -63,12 +63,28 @@ let plan_types (d : doc) : emitted_type list * decline list =
   List.iter
     (fun (ty : Mgtt_ast.ty) ->
       let comps = Mgtt_ast.components_of_type d ty.tname in
-      let doms, ds = Mgtt_domains.of_type ty comps in
+      (* The domains cut every fact at every constant any state reads: the
+         type's, and those of each component's own states. *)
+      let all_states =
+        ty.states @ List.concat_map (fun (c : comp) -> c.cstates) comps
+      in
+      let doms, ds =
+        Mgtt_domains.of_type { ty with states = all_states } comps
+      in
       declines := !declines @ ds;
       let groups = Hashtbl.create 4 in
       List.iter
         (fun (c : comp) ->
-          let key = String.concat "\x00" c.chealthy in
+          let key =
+            String.concat "\x00" c.chealthy
+            ^ "\x01"
+            ^ String.concat "\x00"
+                (List.map
+                   (fun (s : Mgtt_ast.state) -> s.sname ^ "=" ^ s.swhen)
+                   c.cstates)
+            ^ "\x01"
+            ^ String.concat "\x00" c.chealthy_in
+          in
           let prev = try Hashtbl.find groups key with Not_found -> [] in
           Hashtbl.replace groups key (prev @ [ c ]))
         comps;
@@ -77,7 +93,13 @@ let plan_types (d : doc) : emitted_type list * decline list =
           match cs with
           | [] -> ()
           | first :: _ ->
-              let same_as_type = first.chealthy = ty.thealthy in
+              let same_as_type =
+                first.chealthy = ty.thealthy
+                && first.cstates = [] && first.chealthy_in = []
+              in
+              let ty =
+                Option.value ~default:ty (Mgtt_ast.effective_type d first)
+              in
               let name =
                 if same_as_type then Mgtt_guard.writ_name ty.tname
                 else
@@ -196,11 +218,42 @@ let emit_equations (b : Buffer.t) (ets : emitted_type list) : decline list =
                 }
                 :: !declines
           | Ok active_e -> (
+              (* A state with a verdict decides health whatever the rules
+                 say, so on both sides of the law: healthy states count as
+                 healthy, broken ones as broken. *)
+              let guards verdict =
+                List.filter_map
+                  (fun (st : Mgtt_ast.state) ->
+                    if st.sverdict <> verdict then None
+                    else
+                      match Mgtt_expr.parse st.swhen with
+                      | Error _ -> None
+                      | Ok e -> (
+                          match Mgtt_guard.to_writ_opt et.doms ~subject e with
+                          | Ok g -> Some g
+                          | Error _ -> None))
+                  et.source.states
+              in
+              let with_verdicts g =
+                let g =
+                  match guards "healthy" with
+                  | [] -> g
+                  | hs -> "(or " ^ String.concat " " (g :: hs) ^ ")"
+                in
+                match guards "broken" with
+                | [] -> g
+                | bs ->
+                    "(and " ^ g ^ " "
+                    ^ String.concat " "
+                        (List.map (fun b -> "(not " ^ b ^ ")") bs)
+                    ^ ")"
+              in
               match
                 ( Mgtt_guard.clauses_to_writ et.doms ~subject healthy,
                   Mgtt_guard.to_writ_opt et.doms ~subject active_e )
               with
               | Ok (Some h), Ok a ->
+                  let h = with_verdicts h and a = with_verdicts a in
                   buf_add b
                     ("  ;; healthy: "
                     ^ String.concat " & " et.healthy
@@ -327,7 +380,7 @@ let emit_originations (b : Buffer.t) (d : doc) (ets : emitted_type list) :
                   let subject = Mgtt_guard.writ_name c.cname in
                   List.iter
                     (fun (s : Mgtt_ast.state) ->
-                      if s.sname <> et.source.default_state then
+                      if Mgtt_ast.is_failure et.source s then
                         let name =
                           Mgtt_guard.origination_move ~component:c.cname
                             ~state:s.sname

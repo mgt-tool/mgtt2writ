@@ -281,8 +281,18 @@ let test_domains_equality_threshold () =
       thealthy = [ "n < 5" ];
       states =
         [
-          { Mgtt_ast.sname = "exact"; swhen = "n == 5"; striggered = [] };
-          { Mgtt_ast.sname = "low"; swhen = "n < 5"; striggered = [] };
+          {
+            Mgtt_ast.sname = "exact";
+            swhen = "n == 5";
+            striggered = [];
+            sverdict = "";
+          };
+          {
+            Mgtt_ast.sname = "low";
+            swhen = "n < 5";
+            striggered = [];
+            sverdict = "";
+          };
         ];
       default_state = "low";
       tmodes = [];
@@ -315,8 +325,18 @@ let paired_with_constant_ty =
     thealthy = [ "ready == desired" ];
     states =
       [
-        { Mgtt_ast.sname = "live"; swhen = "ready == desired"; striggered = [] };
-        { Mgtt_ast.sname = "draining"; swhen = "desired == 0"; striggered = [] };
+        {
+          Mgtt_ast.sname = "live";
+          swhen = "ready == desired";
+          striggered = [];
+          sverdict = "";
+        };
+        {
+          Mgtt_ast.sname = "draining";
+          swhen = "desired == 0";
+          striggered = [];
+          sverdict = "";
+        };
       ];
     default_state = "live";
     tmodes = [];
@@ -425,6 +445,7 @@ let test_domains_declines_unbounded_fact () =
             Mgtt_ast.sname = "live";
             swhen = "mentioned == true";
             striggered = [];
+            sverdict = "";
           };
         ];
       default_state = "live";
@@ -552,6 +573,181 @@ let test_emit_permissive_triggered_by () =
     (not (contains ~sub:"triggers-b-live" text));
   check "emit: the dependency's default state is not a failure"
     (not (contains ~sub:"(transition a-live-triggers" text))
+
+(* ---- the model's word on a node ------------------------------------------ *)
+
+(* A real export: store-a tolerates a saturated pool (healthy_in), store-b
+   must keep headroom (its own state low_pool, broken). *)
+let verdicts =
+  {|{
+  "mgtt_export_version": 1,
+  "name": "minishop-verdicts",
+  "components": [
+    {
+      "name": "api",
+      "type": "service",
+      "depends": [
+        {
+          "on": "store-a",
+          "while": ""
+        },
+        {
+          "on": "store-b",
+          "while": ""
+        }
+      ],
+      "healthy": [
+        "reachable == true"
+      ],
+      "failure_modes": {}
+    },
+    {
+      "name": "store-a",
+      "type": "datastore",
+      "depends": [],
+      "healthy": [
+        "available == true",
+        "connection_count \u003c 500"
+      ],
+      "failure_modes": {
+        "saturated": [
+          "connection_refused"
+        ],
+        "stopped": [
+          "connection_refused"
+        ]
+      },
+      "healthy_in": [
+        "saturated"
+      ]
+    },
+    {
+      "name": "store-b",
+      "type": "datastore",
+      "depends": [],
+      "healthy": [
+        "available == true",
+        "connection_count \u003c 500"
+      ],
+      "failure_modes": {
+        "low_pool": [
+          "connection_refused"
+        ],
+        "saturated": [
+          "connection_refused"
+        ],
+        "stopped": [
+          "connection_refused"
+        ]
+      },
+      "states": [
+        {
+          "name": "low_pool",
+          "when": "available == true \u0026 connection_count \u003e= 400",
+          "triggered_by": [],
+          "verdict": "broken"
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "datastore",
+      "provider": "minishop",
+      "facts": [
+        {
+          "name": "available",
+          "type": "mgtt.bool"
+        },
+        {
+          "name": "connection_count",
+          "type": "mgtt.int"
+        }
+      ],
+      "healthy": [
+        "available == true",
+        "connection_count \u003c 500"
+      ],
+      "states": [
+        {
+          "name": "live",
+          "when": "available == true \u0026 connection_count \u003c 500",
+          "triggered_by": []
+        },
+        {
+          "name": "saturated",
+          "when": "available == true \u0026 connection_count \u003e= 500",
+          "triggered_by": []
+        },
+        {
+          "name": "stopped",
+          "when": "available == false",
+          "triggered_by": []
+        }
+      ],
+      "default_active_state": "live",
+      "failure_modes": {
+        "saturated": [
+          "connection_refused"
+        ],
+        "stopped": [
+          "connection_refused"
+        ]
+      }
+    },
+    {
+      "name": "service",
+      "provider": "minishop",
+      "facts": [
+        {
+          "name": "reachable",
+          "type": "mgtt.bool"
+        }
+      ],
+      "healthy": [
+        "reachable == true"
+      ],
+      "states": [
+        {
+          "name": "up",
+          "when": "reachable == true",
+          "triggered_by": []
+        },
+        {
+          "name": "down",
+          "when": "reachable == false",
+          "triggered_by": [
+            "connection_refused"
+          ]
+        }
+      ],
+      "default_active_state": "up",
+      "failure_modes": {}
+    }
+  ],
+  "declines": []
+}
+|}
+
+let test_emit_state_verdicts () =
+  let text, _ = Emit_mgtt.file ~name:"v" (doc_of_string verdicts) in
+  check "verdicts: a healthy state is no failure, so nothing originates it"
+    (not (contains ~sub:"(transition store-a-fails-saturated" text));
+  check "verdicts: nor does it propagate"
+    (not (contains ~sub:"(transition store-a-saturated-triggers" text));
+  check "verdicts: a component's own state originates"
+    (contains ~sub:"(transition store-b-fails-low-pool\n" text);
+  check "verdicts: and propagates by its can_cause"
+    (contains ~sub:"(transition store-b-low-pool-triggers-api-down\n" text);
+  check "verdicts: the two stores get types of their own"
+    (contains ~sub:"datastore-store-a-health-matches-state" text
+    && contains ~sub:"datastore-store-b-health-matches-state" text);
+  let rules = Emit_rules.moves_named (doc_of_string verdicts) in
+  check
+    "verdicts: the rules name the own state's propagation, not the healthy \
+     one's"
+    (List.mem "store-b-low-pool-triggers-api-down" rules
+    && not (List.mem "store-a-saturated-triggers-api-down" rules))
 
 (* ---- redundancy groups ------------------------------------------------- *)
 
@@ -901,6 +1097,7 @@ let () =
   test_emit_names_transitions ();
   test_emit_originations ();
   test_emit_permissive_triggered_by ();
+  test_emit_state_verdicts ();
   test_read_groups ();
   test_emit_group_guard ();
   test_emit_group_needing_all ();

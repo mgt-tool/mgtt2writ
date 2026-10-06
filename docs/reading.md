@@ -284,6 +284,17 @@ redundancy prevents. In general the conjunct is an `or` over every set of
 n − k + 1 members; groups are a handful of replicas or colours, so the sets are
 few.
 
+### The model's word on a node
+
+A component's own `states:` come before its type's and are broken whatever the
+rules say; `healthy_in:` names states, the type's or the component's, that are
+no failure whatever the rules say. Such a component gets a type of its own,
+like an override of `healthy:`. A healthy state originates and propagates
+nothing. In the health law a state with a verdict counts on both sides: the
+law reads `(iff (and (or H healthy…) (not broken…)) (and (or A healthy…) (not
+broken…)))`, so where the model decides, rules and states agree by
+construction, and everywhere else the law is the type's.
+
 ### Conditional edges
 
 A `while:` guard is read as mgtt's scenarios read it: the edge may be active,

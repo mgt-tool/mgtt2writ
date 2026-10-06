@@ -131,4 +131,18 @@ both=$(situation "(is store-a.available no) (is store-b.available no)")
 moves_out "$both" | grep -q store-a-stopped-triggers-api-down ||
   fail "both stores down cannot take api down: the group never breaks"
 
-echo "pipeline: 6 checks passed (real $writ, $states situations)"
+# ---- the model's word on a node: verdicts keep the law ----------------------
+#
+# A state that decides health whatever the rules say decides it on both sides
+# of the health law, so a model using healthy_in and its own states still
+# verifies clean.
+
+verdicts_fixture="$here/fixtures/mgtt-export-verdicts.json"
+"$m2w" < "$verdicts_fixture" > "$tmp_model" 2>/dev/null ||
+  fail "could not translate the verdicts export"
+out=$("$writ" check "$tmp_model" --no-certificate 2>&1) || {
+  echo "$out"
+  fail "a model with healthy_in and its own states should verify clean"
+}
+
+echo "pipeline: 7 checks passed (real $writ, $states situations)"

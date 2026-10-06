@@ -29,6 +29,9 @@ type state = {
   sname : string;
   swhen : string;  (** the raw `when:` expression, unparsed *)
   striggered : string list;  (** `triggered_by` labels *)
+  sverdict : string;
+      (** "" when the healthy rules decide; "healthy" for a state that is no
+          failure, "broken" for a component's own state *)
 }
 
 type ty = {
@@ -54,6 +57,10 @@ type comp = {
           a plain, hard dependency. *)
   chealthy : string list;  (** already effective: mgtt applied the override *)
   cmodes : (string * string list) list;
+  cstates : state list;
+      (** the component's own states, checked before its type's, each broken *)
+  chealthy_in : string list;
+      (** type states in which this component is healthy whatever the rules *)
 }
 
 type doc = {
@@ -81,6 +88,25 @@ let components_of_type (d : doc) (tyname : string) : comp list =
 let can_cause (c : comp) (state : string) : string list =
   match List.assoc_opt state c.cmodes with Some ls -> ls | None -> []
 
+(* A component's effective type: its own states first, its healthy_in states
+   marked healthy -- the model's word on that node over its provider's, as mgtt
+   reads it. *)
+let effective_type (d : doc) (c : comp) : ty option =
+  match type_of d c.ctype with
+  | None -> None
+  | Some ty when c.cstates = [] && c.chealthy_in = [] -> Some ty
+  | Some ty ->
+      let mark (st : state) =
+        if List.mem st.sname c.chealthy_in && st.sverdict <> "broken" then
+          { st with sverdict = "healthy" }
+        else st
+      in
+      Some { ty with states = List.map mark (c.cstates @ ty.states) }
+
+(* A healthy state is no failure: it starts and carries no chain. *)
+let is_failure (ty : ty) (st : state) : bool =
+  st.sname <> ty.default_state && st.sverdict <> "healthy"
+
 (* Whether [dep], failing into [failing], can put a component of type [ty] into
    [target]: mgtt's own rule, the one its scenarios enumerate by. Only failure
    states take part on either side: [failing] is not [dep_ty]'s default and
@@ -95,6 +121,8 @@ let triggers (dep : comp) (dep_ty : ty) (failing : state) (ty : ty)
     else can_cause dep failing.sname
   in
   labels <> []
+  && failing.sverdict <> "healthy"
   && target.sname <> ty.default_state
+  && target.sverdict <> "healthy"
   && (target.striggered = []
      || List.exists (fun l -> List.mem l target.striggered) labels)
