@@ -1,0 +1,148 @@
+{
+  "mgtt_export_version": 1,
+  "name": "minishop-verdicts",
+  "components": [
+    {
+      "name": "api",
+      "type": "service",
+      "depends": [
+        {
+          "on": "store-a",
+          "while": ""
+        },
+        {
+          "on": "store-b",
+          "while": ""
+        }
+      ],
+      "healthy": [
+        "reachable == true"
+      ],
+      "failure_modes": {}
+    },
+    {
+      "name": "store-a",
+      "type": "datastore",
+      "depends": [],
+      "healthy": [
+        "available == true",
+        "connection_count \u003c 500"
+      ],
+      "failure_modes": {
+        "saturated": [
+          "connection_refused"
+        ],
+        "stopped": [
+          "connection_refused"
+        ]
+      },
+      "healthy_in": [
+        "saturated"
+      ]
+    },
+    {
+      "name": "store-b",
+      "type": "datastore",
+      "depends": [],
+      "healthy": [
+        "available == true",
+        "connection_count \u003c 500"
+      ],
+      "failure_modes": {
+        "low_pool": [
+          "connection_refused"
+        ],
+        "saturated": [
+          "connection_refused"
+        ],
+        "stopped": [
+          "connection_refused"
+        ]
+      },
+      "states": [
+        {
+          "name": "low_pool",
+          "when": "available == true \u0026 connection_count \u003e= 400",
+          "triggered_by": [],
+          "verdict": "broken"
+        }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "datastore",
+      "provider": "minishop",
+      "facts": [
+        {
+          "name": "available",
+          "type": "mgtt.bool"
+        },
+        {
+          "name": "connection_count",
+          "type": "mgtt.int"
+        }
+      ],
+      "healthy": [
+        "available == true",
+        "connection_count \u003c 500"
+      ],
+      "states": [
+        {
+          "name": "live",
+          "when": "available == true \u0026 connection_count \u003c 500",
+          "triggered_by": []
+        },
+        {
+          "name": "saturated",
+          "when": "available == true \u0026 connection_count \u003e= 500",
+          "triggered_by": []
+        },
+        {
+          "name": "stopped",
+          "when": "available == false",
+          "triggered_by": []
+        }
+      ],
+      "default_active_state": "live",
+      "failure_modes": {
+        "saturated": [
+          "connection_refused"
+        ],
+        "stopped": [
+          "connection_refused"
+        ]
+      }
+    },
+    {
+      "name": "service",
+      "provider": "minishop",
+      "facts": [
+        {
+          "name": "reachable",
+          "type": "mgtt.bool"
+        }
+      ],
+      "healthy": [
+        "reachable == true"
+      ],
+      "states": [
+        {
+          "name": "up",
+          "when": "reachable == true",
+          "triggered_by": []
+        },
+        {
+          "name": "down",
+          "when": "reachable == false",
+          "triggered_by": [
+            "connection_refused"
+          ]
+        }
+      ],
+      "default_active_state": "up",
+      "failure_modes": {}
+    }
+  ],
+  "declines": []
+}

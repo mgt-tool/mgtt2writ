@@ -47,6 +47,7 @@ let read_state j =
     sname = string_field "name" j;
     swhen = string_field "when" j;
     striggered = string_list "triggered_by" j;
+    sverdict = string_field "verdict" j;
   }
 
 let read_fact j = (string_field "name" j, string_field "type" j)
@@ -80,6 +81,8 @@ let read_comp j =
     cgroups = List.filter_map read_group (list_field "depends" j);
     chealthy = string_list "healthy" j;
     cmodes = modes_field "failure_modes" j;
+    cstates = List.map read_state (list_field "states" j);
+    chealthy_in = string_list "healthy_in" j;
   }
 
 let read_decline j =

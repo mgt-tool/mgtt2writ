@@ -3,14 +3,14 @@
 Two suites, and the split is forced by an oracle problem rather than chosen for
 tidiness.
 
-## `dune runtest` — 96 unit checks
+## `dune runtest` — 102 unit checks
 
 Everything decidable from the translation alone: reading the export document,
 reducing facts to finite domains, and the shape of the emitted text. No
 filesystem, no binaries, no writ.
 
 ```sh
-dune runtest        # test_mgtt2writ: 96 passed
+dune runtest        # test_mgtt2writ: 102 passed
 ```
 
 Among them is a **pinned real export** at `test/fixtures/mgtt-export-v1.json`,
@@ -21,7 +21,7 @@ document end to end turns that drift into a failure here rather than in a
 user's terminal. Refresh it deliberately, from a real run, when the schema
 version changes.
 
-## `test/pipeline.sh` — 6 end-to-end checks
+## `test/pipeline.sh` — 8 end-to-end checks
 
 This tool emits **text**. Asserting on text passes just as happily when the
 text is confidently wrong: `contains "(schema "` proves nothing about whether a

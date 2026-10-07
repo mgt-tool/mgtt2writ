@@ -77,13 +77,13 @@ let emitted_moves (d : doc) : string list =
    so a move the emitter declined is absent here too. *)
 let moves_of (emitted : string list) (d : doc) (c : comp) :
     component_moves option =
-  match Mgtt_ast.type_of d c.ctype with
+  match Mgtt_ast.effective_type d c with
   | None -> None
   | Some ty ->
       let self =
         List.filter_map
           (fun (s : state) ->
-            if s.sname = ty.default_state then None
+            if not (Mgtt_ast.is_failure ty s) then None
             else
               Some
                 (Mgtt_guard.origination_move ~component:c.cname ~state:s.sname))
@@ -96,7 +96,7 @@ let moves_of (emitted : string list) (d : doc) (c : comp) :
               (Mgtt_ast.component_of d dep_name, Mgtt_ast.type_of d c.ctype)
             with
             | Some dep_c, Some _ -> (
-                match Mgtt_ast.type_of d dep_c.ctype with
+                match Mgtt_ast.effective_type d dep_c with
                 | None -> []
                 | Some dep_ty ->
                     List.concat_map
