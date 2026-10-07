@@ -21,7 +21,7 @@ document end to end turns that drift into a failure here rather than in a
 user's terminal. Refresh it deliberately, from a real run, when the schema
 version changes.
 
-## `test/pipeline.sh` — 7 end-to-end checks
+## `test/pipeline.sh` — 8 end-to-end checks
 
 This tool emits **text**. Asserting on text passes just as happily when the
 text is confidently wrong: `contains "(schema "` proves nothing about whether a

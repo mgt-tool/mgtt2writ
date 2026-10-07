@@ -339,6 +339,18 @@ its own.
 
 ---
 
+## For agents: the same thing over MCP
+
+`mgtt2writ mcp` serves the translation as one MCP tool, `mgtt_to_writ`, so an
+agent without a shell composes the three tools the way a pipe does: mgtt's
+`model_export`, then `mgtt_to_writ` (which writes the model, and with
+`rules: true` the rules, to files and returns their paths), then writ's
+`writ_check` and `writ_derive` on those paths.
+
+```sh
+claude mcp add mgtt2writ -- mgtt2writ mcp
+```
+
 ## Install
 
 ```sh
@@ -403,7 +415,7 @@ the parts that were harder than they looked.
 
 ```sh
 make test        # 102 unit checks; no writ needed
-make pipeline    # 7 end-to-end checks against the real binaries
+make pipeline    # 8 end-to-end checks against the real binaries
 make check       # both
 ```
 

@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`mgtt2writ mcp`: the translation as an MCP tool.** One tool, `mgtt_to_writ`, takes the export (inline or by path), writes the writ model, and with `rules: true` the diagnosability rules, to files, and returns their paths and the declines; writ's tools read models from paths. An agent without a shell then composes mgtt's `model_export`, `mgtt_to_writ` and writ's `writ_check` as the command line pipes them. Neither of the other two servers learns about it.
 - **The model's word on a node.** Reads mgtt's state verdicts: a component's own `states:` (broken whatever the rules say) and `healthy_in:` (no failure whatever they say), and a type's `healthy_in` states. A component using them gets a type of its own; a healthy state originates and propagates nothing; and in the health law a state with a verdict counts on both sides, so a model using them verifies clean. `--rules` follows the same effective types.
 - **Redundancy groups.** A dependency with `need: k` over n components is read
   as the group it is, not as n hard dependencies: a member's failure reaches

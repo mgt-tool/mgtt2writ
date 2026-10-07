@@ -8,7 +8,7 @@
  (name main)
  (public_name mgtt2writ)
  (package mgtt2writ)
- (modules main version)
+ (modules main mcp version)
  (libraries mgtt2writ writ_json))
 
 (rule

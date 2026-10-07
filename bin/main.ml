@@ -77,7 +77,8 @@ let report_declines (ds : Mgtt_ast.decline list) =
 let usage =
   "usage:\n\
   \  mgtt model export --json | mgtt2writ [--strict] | writ check --stdin\n\
-  \  mgtt model export --json | mgtt2writ --rules > model.rules\n\n\
+  \  mgtt model export --json | mgtt2writ --rules > model.rules\n\
+  \  mgtt2writ mcp     the translation as an MCP tool, over stdio\n\n\
    Reads an mgtt model export (JSON, on stdin) and writes a writ model on\n\
    stdout. Declines go to stderr.\n\n\
    options:\n\
@@ -132,6 +133,9 @@ let () =
   | [ _ ] -> run ~strict:false
   | [ _; "--strict" ] -> run ~strict:true
   | [ _; "--rules" ] -> run_rules ()
+  | [ _; "mcp" ] ->
+      Mcp.serve ();
+      exit 0
   | [ _; ("-h" | "--help") ] ->
       print_endline usage;
       exit 0

@@ -145,4 +145,22 @@ out=$("$writ" check "$tmp_model" --no-certificate 2>&1) || {
   fail "a model with healthy_in and its own states should verify clean"
 }
 
-echo "pipeline: 7 checks passed (real $writ, $states situations)"
+# ---- the same translation as an MCP tool -------------------------------------
+#
+# An agent without a shell composes mgtt's model_export, this tool's
+# mgtt_to_writ and writ's writ_check. The tool writes the model to a file and
+# answers with its path, since writ reads models from paths.
+
+mcp_dir=$(mktemp -d)
+trap 'rm -f "$tmp_rules" "$tmp_model" "$tmp_claims"; rm -rf "$mcp_dir"' EXIT
+answer=$(printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mgtt_to_writ\",\"arguments\":{\"export_path\":\"$group_fixture\",\"out_dir\":\"$mcp_dir\"}}}" |
+  "$m2w" mcp)
+model_path=$(echo "$answer" | grep '"id":2' | sed -n 's/.*\\"model_path\\":\\"\([^\\]*\)\\".*/\1/p')
+[ -n "$model_path" ] && [ -f "$model_path" ] ||
+  fail "mgtt2writ mcp wrote no model; answered: $answer"
+"$writ" check "$model_path" --no-certificate >/dev/null 2>&1 ||
+  fail "real writ rejected the model mgtt2writ mcp wrote"
+
+echo "pipeline: 8 checks passed (real $writ, $states situations)"
