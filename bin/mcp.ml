@@ -43,8 +43,11 @@ let tool_schema =
                   ( "export",
                     obj
                       [
-                        ("type", str "string");
-                        ("description", str "the export document itself");
+                        ("type", Json.List [ str "object"; str "string" ]);
+                        ( "description",
+                          str
+                            "the export document itself, as model_export \
+                             returns it or as JSON text" );
                       ] );
                   ( "export_path",
                     obj
@@ -104,61 +107,63 @@ let safe name =
 
 let translate args : (Json.t, string) result =
   let field k = Json.member k args in
-  let source =
+  let parse src =
+    Result.map_error (fun e -> "export: " ^ e) (Json_parse.parse src)
+  in
+  (* The document as model_export returns it, as text, or in a file. *)
+  let document =
     match (field "export", field "export_path") with
-    | Some (Json.String s), None -> Ok s
+    | Some (Json.Assoc _ as j), None -> Ok j
+    | Some (Json.String s), None -> parse s
     | None, Some (Json.String p) -> (
-        try Ok (read_file p) with Sys_error e -> Error e)
+        try parse (read_file p) with Sys_error e -> Error e)
     | Some _, Some _ -> Error "give export or export_path, not both"
     | _ -> Error "export or export_path is required"
   in
-  match source with
+  match document with
   | Error e -> Error e
-  | Ok src -> (
-      match Json_parse.parse src with
+  | Ok j -> (
+      match Mgtt_read.of_json j with
       | Error e -> Error ("export: " ^ e)
-      | Ok j -> (
-          match Mgtt_read.of_json j with
-          | Error e -> Error ("export: " ^ e)
-          | Ok doc -> (
-              let dir =
-                match field "out_dir" with
-                | Some (Json.String d) -> d
-                | _ ->
-                    Filename.concat
-                      (Filename.get_temp_dir_name ())
-                      ("mgtt2writ-" ^ safe doc.Mgtt_ast.name)
-              in
-              let base = Filename.concat dir (safe doc.Mgtt_ast.name) in
-              let text, declines = Emit_mgtt.file ~name:doc.Mgtt_ast.name doc in
-              try
-                mkdir_p dir;
-                write_file (base ^ ".writ") text;
-                let rules =
-                  match field "rules" with
-                  | Some (Json.Bool true) ->
-                      write_file (base ^ ".rules")
-                        (Emit_rules.file ~name:doc.Mgtt_ast.name doc);
-                      [ ("rules_path", str (base ^ ".rules")) ]
-                  | _ -> []
-                in
-                Ok
-                  (obj
-                     ([ ("model_path", str (base ^ ".writ")) ]
-                     @ rules
-                     @ [
-                         ( "declines",
-                           Json.List
-                             (List.map
-                                (fun (d : Mgtt_ast.decline) ->
-                                  obj
-                                    [
-                                      ("what", str d.Mgtt_ast.what);
-                                      ("why", str d.Mgtt_ast.why);
-                                    ])
-                                declines) );
-                       ]))
-              with Sys_error e -> Error e)))
+      | Ok doc -> (
+          let dir =
+            match field "out_dir" with
+            | Some (Json.String d) -> d
+            | _ ->
+                Filename.concat
+                  (Filename.get_temp_dir_name ())
+                  ("mgtt2writ-" ^ safe doc.Mgtt_ast.name)
+          in
+          let base = Filename.concat dir (safe doc.Mgtt_ast.name) in
+          let text, declines = Emit_mgtt.file ~name:doc.Mgtt_ast.name doc in
+          try
+            mkdir_p dir;
+            write_file (base ^ ".writ") text;
+            let rules =
+              match field "rules" with
+              | Some (Json.Bool true) ->
+                  write_file (base ^ ".rules")
+                    (Emit_rules.file ~name:doc.Mgtt_ast.name doc);
+                  [ ("rules_path", str (base ^ ".rules")) ]
+              | _ -> []
+            in
+            Ok
+              (obj
+                 ([ ("model_path", str (base ^ ".writ")) ]
+                 @ rules
+                 @ [
+                     ( "declines",
+                       Json.List
+                         (List.map
+                            (fun (d : Mgtt_ast.decline) ->
+                              obj
+                                [
+                                  ("what", str d.Mgtt_ast.what);
+                                  ("why", str d.Mgtt_ast.why);
+                                ])
+                            declines) );
+                   ]))
+          with Sys_error e -> Error e))
 
 let reply id result =
   Json.to_string
